@@ -59,8 +59,11 @@ export default function TransactionsPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
-        <h1 className="text-xl font-bold text-slate-900">Транзакции</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Транзакции</h1>
+          <p className="text-sm text-slate-500 mt-0.5">История движений по счетам</p>
+        </div>
         <div className="flex gap-2">
           <button onClick={() => { window.location.href = '/api/finance/export-transactions/' }}
             className="px-3 py-1.5 rounded-xl text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
@@ -76,7 +79,7 @@ export default function TransactionsPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+        <form onSubmit={handleCreate} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Пользователь</label>
@@ -116,7 +119,7 @@ export default function TransactionsPage() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead>

@@ -211,7 +211,7 @@ export default function PayrollSheetDetailPage() {
 
   return (
     <div>
-      <Link to="/payroll-sheets" className="text-indigo-600 hover:text-indigo-800 text-sm font-medium">&larr; Назад</Link>
+      <Link to="/payroll-sheets" className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium transition">&larr; Назад</Link>
 
       {/* Header */}
       <div className="mt-4 mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -444,7 +444,7 @@ export default function PayrollSheetDetailPage() {
         )}
         <div className="flex gap-2">
           <button onClick={() => setShowAdvModal('request')} className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-amber-600 hover:bg-amber-500 transition shadow-sm">Запросить аванс</button>
-          <button onClick={() => setShowAdvModal('repay')} disabled={advDebt <= 0} className="px-4 py-2 rounded-xl text-sm font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 disabled:opacity-40 transition">Выплатить аванс</button>
+          <button onClick={() => setShowAdvModal('repay')} disabled={advDebt <= 0 || totalBasic <= 0} className="px-4 py-2 rounded-xl text-sm font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 disabled:opacity-40 transition" title={totalBasic <= 0 && advDebt > 0 ? 'Добавьте занятия, чтобы погасить аванс через этот РЛ' : undefined}>Погасить аванс</button>
         </div>
         {(sheet.advances || []).length > 0 && (
           <div className="mt-4 overflow-x-auto">
@@ -469,11 +469,25 @@ export default function PayrollSheetDetailPage() {
       {showAdvModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">{showAdvModal === 'request' ? 'Запросить аванс' : 'Выплатить аванс'}</h3>
-            <p className="text-sm text-slate-500 mb-4">{showAdvModal === 'request' ? `Максимум: ${fmt(totalBasic)} (заработок по данному РЛ). Аванс будет вычтен из суммы к выдаче.` : `Максимум к погашению: ${fmt(advDebt)}.`}</p>
-            <input type="number" step="0.01" min="0.01" max={showAdvModal === 'request' ? totalBasic : advDebt} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm mb-4" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} autoFocus />
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">{showAdvModal === 'request' ? 'Запросить аванс' : 'Погасить аванс'}</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              {showAdvModal === 'request'
+                ? 'Укажите любую сумму. Решение об одобрении аванса принимают при проверке РЛ.'
+                : `Максимум к погашению по этому РЛ: ${fmt(Math.min(advDebt, totalBasic))}. Вы сами выбираете сумму — не обязательно отдавать всё сразу.`}
+            </p>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={showAdvModal === 'request' ? undefined : Math.min(advDebt, totalBasic)}
+              placeholder={showAdvModal === 'request' ? 'Сумма' : `Макс. ${fmt(Math.min(advDebt, totalBasic))}`}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm mb-4"
+              value={advanceAmount}
+              onChange={(e) => setAdvanceAmount(e.target.value)}
+              autoFocus
+            />
             <div className="flex gap-2">
-              <button onClick={handleAdvance} disabled={!advanceAmount || parseFloat(advanceAmount) <= 0} className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition ${showAdvModal === 'request' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'}`}>{showAdvModal === 'request' ? 'Запросить' : 'Выплатить'}</button>
+              <button onClick={handleAdvance} disabled={!advanceAmount || parseFloat(advanceAmount) <= 0} className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition ${showAdvModal === 'request' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'}`}>{showAdvModal === 'request' ? 'Запросить' : 'Погасить'}</button>
               <button onClick={() => { setShowAdvModal(null); setAdvanceAmount('') }} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">Отмена</button>
             </div>
           </div>

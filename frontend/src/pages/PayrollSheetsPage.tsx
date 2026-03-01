@@ -49,25 +49,30 @@ export default function PayrollSheetsPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <h1 className="text-xl font-bold text-slate-900">Расчётные листы</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Расчётные листы</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Ваши ведомости и их статусы</p>
+        </div>
         {(['teacher', 'employee', 'moderator'].includes(user?.role || '')) && (
-          <Link to="/payroll-sheets/new" className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition">Создать новый</Link>
+          <Link to="/payroll-sheets/new" className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 transition">Создать новый</Link>
         )}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <input type="text" placeholder="Поиск по названию или педагогу..." className="flex-1 min-w-[200px] rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent" value={search} onChange={e => setSearch(e.target.value)} />
-        <select className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">Все статусы</option>
-          {Object.entries(SL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-6">
+        <div className="flex flex-wrap gap-2">
+          <input type="text" placeholder="Поиск по названию или педагогу..." className="flex-1 min-w-[200px] rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent" value={search} onChange={e => setSearch(e.target.value)} />
+          <select className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">Все статусы</option>
+            {Object.entries(SL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {filtered.map(s => (
-          <Link key={s.id} to={`/payroll-sheets/${s.id}`} className="block bg-white rounded-xl border border-slate-200 hover:shadow-md hover:border-slate-300 transition p-4">
+          <Link key={s.id} to={`/payroll-sheets/${s.id}`} className="block bg-white rounded-2xl border border-slate-200 hover:shadow-lg hover:border-indigo-200 transition-all p-5">
             <div className="flex items-start justify-between">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

@@ -47,8 +47,11 @@ export default function FinancePage() {
 
   return (
     <div>
-      <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-6">Финансы</h1>
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Финансы</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Балансы и операции по пользователям</p>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead>

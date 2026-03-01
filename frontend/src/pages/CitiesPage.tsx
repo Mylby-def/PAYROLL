@@ -42,17 +42,20 @@ export default function CitiesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Города</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Города</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Справочник городов</p>
+        </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition"
+          className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 transition"
         >
           {showForm ? 'Отмена' : 'Добавить город'}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6 flex gap-3">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6 flex gap-3">
           <input
             type="text"
             required
@@ -67,7 +70,7 @@ export default function CitiesPage() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <ul className="divide-y divide-slate-100">
           {cities.map((c) => (
             <li key={c.id} className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">

@@ -40,20 +40,23 @@ export default function SubjectsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Предметы</h1>
-        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Предметы</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Справочник учебных предметов</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 transition">
           {showForm ? 'Отмена' : 'Добавить предмет'}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6 flex gap-3">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6 flex gap-3">
           <input type="text" required placeholder="Название предмета" className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500" value={name} onChange={(e) => setName(e.target.value)} />
           <button type="submit" className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition">Создать</button>
         </form>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <ul className="divide-y divide-slate-100">
           {subjects.map((s) => (
             <li key={s.id} className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">

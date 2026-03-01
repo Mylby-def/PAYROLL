@@ -80,11 +80,14 @@ export default function ApprovalPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-900 mb-6">Одобрение расчётных листов</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Одобрение расчётных листов</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Проверка и утверждение ведомостей педагогов</p>
+      </div>
 
       <div className="space-y-4">
         {sheets.map((sheet) => (
-          <div key={sheet.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div key={sheet.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
             <div className="p-5">
               <div className="flex items-start justify-between">
                 <div>
