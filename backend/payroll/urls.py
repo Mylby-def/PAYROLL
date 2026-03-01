@@ -12,6 +12,7 @@ from .views import (
     csrf_cookie_view, login_view, logout_view, user_view, change_password,
     disburse_funds, add_extra_funds, users_list,
     user_profiles_list, create_user_profile, update_user_profile,
+    dashboard_stats, export_transactions,
 )
 
 router = DefaultRouter()
@@ -47,4 +48,6 @@ urlpatterns = [
     path('profiles/', user_profiles_list),
     path('profiles/create/', create_user_profile),
     path('profiles/<int:user_id>/', update_user_profile),
+    path('dashboard/stats/', dashboard_stats),
+    path('finance/export-transactions/', export_transactions),
 ]

@@ -17,6 +17,8 @@ import UserProfilesPage from './pages/UserProfilesPage'
 import BranchesPage from './pages/BranchesPage'
 import SettingsPage from './pages/SettingsPage'
 import ActivityLogPage from './pages/ActivityLogPage'
+import NotificationsPage from './pages/NotificationsPage'
+import AdminsPage from './pages/AdminsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -40,10 +42,12 @@ export default function App() {
           <Route path="finance" element={<FinancePage />} />
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="profiles" element={<UserProfilesPage />} />
+          <Route path="admins" element={<AdminsPage />} />
           <Route path="branches" element={<BranchesPage />} />
           <Route path="cities" element={<CitiesPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="activity" element={<ActivityLogPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
         </Route>
       </Routes>
     </Router>

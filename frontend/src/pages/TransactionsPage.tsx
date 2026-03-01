@@ -59,14 +59,20 @@ export default function TransactionsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Транзакции</h1>
-        {canCreate && (
-          <button onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition">
-            {showForm ? 'Отмена' : 'Добавить'}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
+        <h1 className="text-xl font-bold text-slate-900">Транзакции</h1>
+        <div className="flex gap-2">
+          <button onClick={() => { window.location.href = '/api/finance/export-transactions/' }}
+            className="px-3 py-1.5 rounded-xl text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">
+            Экспорт Excel
           </button>
-        )}
+          {canCreate && (
+            <button onClick={() => setShowForm(!showForm)}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition">
+              {showForm ? 'Отмена' : 'Добавить'}
+            </button>
+          )}
+        </div>
       </div>
 
       {showForm && (

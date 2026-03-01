@@ -18,6 +18,7 @@ const NAV: NI[] = [
   { to: '/branches', label: 'Филиалы', icon: '⊞', roles: ['administrator', 'senior_admin', 'chief_admin', 'moderator'] },
   { to: '/transactions', label: 'Транзакции', icon: '⇄', roles: ['teacher', 'employee', 'accountant', 'senior_admin', 'chief_admin', 'moderator'] },
   { to: '/profiles', label: 'Пользователи', icon: '◑', roles: ['senior_admin', 'chief_admin', 'moderator'] },
+  { to: '/admins', label: 'Администраторы', icon: '⚑', roles: ['senior_admin', 'chief_admin', 'moderator'] },
   { to: '/teachers', label: 'Педагоги', icon: '◐', roles: ['accountant', 'senior_admin', 'chief_admin', 'moderator'] },
   { to: '/subjects', label: 'Предметы', icon: '▦', roles: ['accountant', 'chief_admin', 'moderator'] },
   { to: '/rates', label: 'Цены', icon: '◈', roles: ['accountant', 'chief_admin', 'moderator'] },

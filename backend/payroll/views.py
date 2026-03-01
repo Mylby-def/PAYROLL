@@ -708,3 +708,73 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         resp['Content-Disposition'] = f'attachment; filename="payroll_{sheet.id}.xlsx"'
         wb.save(resp)
         return resp
+
+
+# ── Dashboard Stats ───────────────────────────────────────────
+
+@api_view(['GET'])
+@perm_classes([IsAuthenticated])
+def dashboard_stats(request):
+    role = get_role(request.user)
+    data = {}
+
+    if role == 'senior_admin':
+        try:
+            city_id = request.user.profile.city_id
+            if city_id:
+                branches = Branch.objects.filter(city_id=city_id)
+                data['branches'] = [{'id': b.id, 'name': b.name, 'balance': str(b.balance)} for b in branches]
+                data['city_name'] = request.user.profile.city.name
+        except: pass
+
+    elif role in ('chief_admin', 'moderator'):
+        cities = City.objects.all()
+        city_data = []
+        for c in cities:
+            branches = c.branches.all()
+            city_data.append({
+                'id': c.id, 'name': c.name,
+                'total_balance': str(sum(b.balance for b in branches)),
+                'branches': [{'id': b.id, 'name': b.name, 'balance': str(b.balance)} for b in branches],
+            })
+        data['cities'] = city_data
+
+    return Response(data)
+
+
+# ── Transaction Export ────────────────────────────────────────
+
+@api_view(['GET'])
+@perm_classes([IsAuthenticated])
+def export_transactions(request):
+    role = get_role(request.user)
+    qs = Transaction.objects.select_related('user', 'created_by').all()
+    if role in ('teacher', 'employee'):
+        qs = qs.filter(user=request.user)
+    elif role == 'senior_admin':
+        try:
+            cid = request.user.profile.city_id
+            if cid: qs = qs.filter(user__profile__city_id=cid)
+        except: pass
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Транзакции"
+    headers = ['Дата', 'Пользователь', 'Тип', 'Счёт', 'Сумма', 'Описание']
+    hf = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    hfn = Font(bold=True, color="FFFFFF")
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h); c.fill = hf; c.font = hfn
+    for i, tx in enumerate(qs[:5000], 2):
+        ws.cell(row=i, column=1, value=tx.created_at.strftime('%d.%m.%Y %H:%M'))
+        ws.cell(row=i, column=2, value=tx.user.get_full_name() or tx.user.username)
+        ws.cell(row=i, column=3, value=tx.get_transaction_type_display())
+        ws.cell(row=i, column=4, value=tx.get_balance_type_display())
+        ws.cell(row=i, column=5, value=float(tx.amount))
+        ws.cell(row=i, column=6, value=tx.description)
+    for col, w in enumerate([18, 25, 25, 15, 15, 40], 1):
+        ws.column_dimensions[get_column_letter(col)].width = w
+    resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="transactions.xlsx"'
+    wb.save(resp)
+    return resp

@@ -102,14 +102,22 @@ export default function PayrollSheetCreatePage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Период с</label>
-              <input type="date" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-slate-700">Период</label>
+              <button type="button" onClick={() => {
+                const now = new Date()
+                const y = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+                const m = now.getMonth() === 0 ? 12 : now.getMonth()
+                setPeriodStart(`${y}-${String(m).padStart(2, '0')}-01`)
+                setPeriodEnd(`${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`)
+              }} className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium transition">
+                Прошлый месяц
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Период по</label>
-              <input type="date" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            <div className="grid grid-cols-2 gap-3">
+              <input type="date" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm [color-scheme:light]" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+              <input type="date" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm [color-scheme:light]" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
             </div>
           </div>
 
