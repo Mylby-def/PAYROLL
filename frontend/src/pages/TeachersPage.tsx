@@ -1,189 +1,185 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client'
 
-interface Subject {
-  id: number
-  name: string
-}
-
+interface Subject { id: number; name: string }
+interface City { id: number; name: string }
 interface Teacher {
   id: number
   full_name: string
   is_active: boolean
   subject_ids: number[]
   subject_names: string[]
+  user_id: number | null
 }
 
 export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
+  const [cities, setCities] = useState<City[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ full_name: '', is_active: true, subject_ids: [] as number[] })
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState({
+    full_name: '', is_active: true, subject_ids: [] as number[],
+    username: '', password: '', city_id: '' as string,
+  })
 
   useEffect(() => { fetchData() }, [])
 
   const fetchData = async () => {
     try {
-      const [tRes, sRes] = await Promise.all([
-        api.get('/teachers/'),
-        api.get('/subjects/'),
-      ])
-      setTeachers(tRes.data.results || tRes.data)
-      setSubjects(sRes.data.results || sRes.data)
-    } catch (error) {
-      console.error('Error fetching data:', error)
-    } finally {
-      setLoading(false)
-    }
+      const [tR, sR, cR] = await Promise.all([api.get('/teachers/'), api.get('/subjects/'), api.get('/cities/')])
+      setTeachers(tR.data.results || tR.data)
+      setSubjects(sR.data.results || sR.data)
+      setCities(cR.data.results || cR.data)
+    } catch {}
+    setLoading(false)
+  }
+
+  const resetForm = () => {
+    setForm({ full_name: '', is_active: true, subject_ids: [], username: '', password: '', city_id: '' })
+    setEditingId(null)
+    setShowForm(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      if (editingId) {
-        await api.patch(`/teachers/${editingId}/`, formData)
-      } else {
-        await api.post('/teachers/', formData)
+      const payload: any = {
+        full_name: form.full_name,
+        is_active: form.is_active,
+        subject_ids: form.subject_ids,
       }
-      setShowForm(false)
-      setEditingId(null)
-      setFormData({ full_name: '', is_active: true, subject_ids: [] })
+      if (!editingId) {
+        payload.username = form.username
+        payload.password = form.password
+        payload.city_id = form.city_id ? parseInt(form.city_id) : null
+      }
+      if (editingId) {
+        await api.patch(`/teachers/${editingId}/`, payload)
+      } else {
+        await api.post('/teachers/', payload)
+      }
+      resetForm()
       fetchData()
-    } catch (error) {
-      console.error('Error saving teacher:', error)
+    } catch (err: any) {
+      alert(err.response?.data?.detail || JSON.stringify(err.response?.data) || 'Ошибка')
     }
   }
 
-  const startEdit = (teacher: Teacher) => {
-    setFormData({
-      full_name: teacher.full_name,
-      is_active: teacher.is_active,
-      subject_ids: teacher.subject_ids || [],
+  const startEdit = (t: Teacher) => {
+    setForm({
+      full_name: t.full_name,
+      is_active: t.is_active,
+      subject_ids: t.subject_ids || [],
+      username: '', password: '', city_id: '',
     })
-    setEditingId(teacher.id)
+    setEditingId(t.id)
     setShowForm(true)
   }
 
   const toggleSubject = (id: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      subject_ids: prev.subject_ids.includes(id)
-        ? prev.subject_ids.filter((s) => s !== id)
-        : [...prev.subject_ids, id],
+    setForm((p) => ({
+      ...p,
+      subject_ids: p.subject_ids.includes(id) ? p.subject_ids.filter((s) => s !== id) : [...p.subject_ids, id],
     }))
   }
 
-  if (loading) return <div className="text-center py-12">Загрузка...</div>
+  if (loading) return <div className="flex items-center justify-center h-64 text-slate-500">Загрузка...</div>
 
   return (
-    <div className="px-4 py-6 sm:px-0">
-      <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">Преподаватели</h1>
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Педагоги</h1>
         <button
-          onClick={() => {
-            setShowForm(!showForm)
-            if (showForm) { setEditingId(null); setFormData({ full_name: '', is_active: true, subject_ids: [] }) }
-          }}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+          onClick={() => { if (showForm) resetForm(); else setShowForm(true) }}
+          className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition"
         >
-          {showForm ? 'Отмена' : 'Добавить преподавателя'}
+          {showForm ? 'Отмена' : 'Добавить педагога'}
         </button>
       </div>
 
       {showForm && (
-        <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-lg font-medium mb-4">
-            {editingId ? 'Редактирование преподавателя' : 'Новый преподаватель'}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">
+            {editingId ? 'Редактирование' : 'Новый педагог (и аккаунт)'}
           </h2>
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">ФИО</label>
-              <input
-                type="text"
-                required
-                className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">ФИО</label>
+                <input type="text" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+              </div>
+              {!editingId && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Логин</label>
+                    <input type="text" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Пароль</label>
+                    <input type="text" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Город</label>
+                    <select className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500" value={form.city_id} onChange={(e) => setForm({ ...form, city_id: e.target.value })}>
+                      <option value="">Не выбран</option>
+                      {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="mb-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.is_active}
-                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <span className="text-sm text-gray-700">Активен</span>
+            <div>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                <span className="text-sm text-slate-700">Активен</span>
               </label>
             </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Предметы</label>
-              <div className="border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Предметы</label>
+              <div className="border border-slate-200 rounded-xl p-3 max-h-40 overflow-y-auto space-y-1.5">
                 {subjects.length === 0 ? (
-                  <p className="text-sm text-gray-500">Нет предметов в системе</p>
-                ) : (
-                  subjects.map((s) => (
-                    <label key={s.id} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.subject_ids.includes(s.id)}
-                        onChange={() => toggleSubject(s.id)}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm text-gray-900">{s.name}</span>
-                    </label>
-                  ))
-                )}
+                  <p className="text-sm text-slate-400">Нет предметов</p>
+                ) : subjects.map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.subject_ids.includes(s.id)} onChange={() => toggleSubject(s.id)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                    <span className="text-sm text-slate-800">{s.name}</span>
+                  </label>
+                ))}
               </div>
             </div>
-            <button
-              type="submit"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              {editingId ? 'Сохранить' : 'Создать'}
+            <button type="submit" className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition">
+              {editingId ? 'Сохранить' : 'Создать педагога и аккаунт'}
             </button>
           </form>
         </div>
       )}
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {teachers.map((teacher) => (
-            <li key={teacher.id} className="px-4 py-4 sm:px-6">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <ul className="divide-y divide-slate-100">
+          {teachers.map((t) => (
+            <li key={t.id} className="px-5 py-4 hover:bg-slate-50 transition-colors">
               <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900">{teacher.full_name}</p>
-                  {teacher.subject_names && teacher.subject_names.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Предметы: {teacher.subject_names.join(', ')}
-                    </p>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{t.full_name}</p>
+                  {t.subject_names?.length > 0 && (
+                    <p className="text-xs text-slate-500 mt-0.5">Предметы: {t.subject_names.join(', ')}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      teacher.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {teacher.is_active ? 'Активен' : 'Неактивен'}
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${t.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {t.is_active ? 'Активен' : 'Неактивен'}
                   </span>
-                  <button
-                    onClick={() => startEdit(teacher)}
-                    className="text-indigo-600 hover:text-indigo-800 text-sm"
-                  >
-                    Редактировать
+                  <button onClick={() => startEdit(t)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition">
+                    Изменить
                   </button>
                 </div>
               </div>
             </li>
           ))}
         </ul>
-        {teachers.length === 0 && (
-          <div className="text-center py-12 text-gray-500">Нет преподавателей. Добавьте первого!</div>
-        )}
+        {teachers.length === 0 && <div className="text-center py-12 text-slate-400">Нет педагогов</div>}
       </div>
     </div>
   )

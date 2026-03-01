@@ -1,5 +1,5 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes as perm_classes
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -7,44 +7,74 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.db.models import Q, Sum
 from django.http import HttpResponse
-from datetime import datetime, timedelta, date
+from datetime import timedelta, date
+from decimal import Decimal
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-from decimal import Decimal
 
 from .models import (
-    Teacher, Subject, Rate, Bonus,
-    PayrollSheet, PayrollEntry,
+    City, UserProfile, Teacher, Subject,
     IndividualPrice, GroupPrice, PkshPrice,
-    IndividualLessonEntry, GroupLessonEntry, Advance
+    Rate, Bonus, PayrollSheet, PayrollEntry,
+    IndividualLessonEntry, GroupLessonEntry, Advance, Transaction
 )
 from .serializers import (
-    TeacherSerializer, SubjectSerializer,
+    CitySerializer, UserSerializer, TeacherSerializer, SubjectSerializer,
+    IndividualPriceSerializer, GroupPriceSerializer, PkshPriceSerializer,
     RateSerializer, BonusSerializer,
     PayrollSheetSerializer, PayrollSheetListSerializer, PayrollEntrySerializer,
-    IndividualPriceSerializer, GroupPriceSerializer, PkshPriceSerializer,
-    IndividualLessonEntrySerializer, GroupLessonEntrySerializer, AdvanceSerializer
+    IndividualLessonEntrySerializer, GroupLessonEntrySerializer,
+    AdvanceSerializer, TransactionSerializer, UserListSerializer
 )
-from rest_framework import serializers
+from .permissions import get_role, CanManagePrices, CanApproveSheets, CanDisburse, MANAGE_ROLES, DISBURSE_ROLES
 
 
-class UserSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    username = serializers.CharField()
-    email = serializers.EmailField(required=False)
-    first_name = serializers.CharField(required=False)
-    last_name = serializers.CharField(required=False)
+# ── Auth ──────────────────────────────────────────────────────
 
-    def to_representation(self, instance):
-        return {
-            'id': instance.id,
-            'username': instance.username,
-            'email': instance.email or '',
-            'first_name': instance.first_name or '',
-            'last_name': instance.last_name or '',
-        }
+@api_view(['GET'])
+@perm_classes([AllowAny])
+@ensure_csrf_cookie
+def csrf_cookie_view(request):
+    return Response({'detail': 'CSRF cookie set'})
 
+
+@api_view(['POST'])
+@perm_classes([AllowAny])
+def login_view(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+    if not username or not password:
+        return Response({'detail': 'Необходимо указать имя пользователя и пароль'}, status=status.HTTP_400_BAD_REQUEST)
+    user = authenticate(request, username=username, password=password)
+    if user is not None:
+        login(request, user)
+        return Response({'user': UserSerializer(user).data})
+    return Response({'detail': 'Неверные учетные данные'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@api_view(['POST'])
+@perm_classes([IsAuthenticated])
+def logout_view(request):
+    logout(request)
+    return Response({'detail': 'Выход выполнен успешно'})
+
+
+@api_view(['GET'])
+@perm_classes([IsAuthenticated])
+def user_view(request):
+    return Response(UserSerializer(request.user).data)
+
+
+# ── Cities ────────────────────────────────────────────────────
+
+class CityViewSet(viewsets.ModelViewSet):
+    queryset = City.objects.all()
+    serializer_class = CitySerializer
+    permission_classes = [IsAuthenticated]
+
+
+# ── Teachers ──────────────────────────────────────────────────
 
 class TeacherViewSet(viewsets.ModelViewSet):
     queryset = Teacher.objects.all()
@@ -52,25 +82,39 @@ class TeacherViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
+# ── Subjects ──────────────────────────────────────────────────
+
 class SubjectViewSet(viewsets.ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     permission_classes = [IsAuthenticated]
 
 
+# ── Prices ────────────────────────────────────────────────────
+
+def _check_price_gaps(model_class):
+    prices = model_class.objects.order_by('effective_from')
+    gaps = []
+    prev = None
+    for p in prices:
+        if prev and prev.effective_to:
+            next_day = prev.effective_to + timedelta(days=1)
+            if next_day < p.effective_from:
+                gaps.append({'gap_from': str(next_day), 'gap_to': str(p.effective_from - timedelta(days=1))})
+        prev = p
+    return Response({'gaps': gaps})
+
+
 class IndividualPriceViewSet(viewsets.ModelViewSet):
     queryset = IndividualPrice.objects.all()
     serializer_class = IndividualPriceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManagePrices]
 
     def get_queryset(self):
         qs = super().get_queryset()
         d = self.request.query_params.get('date')
         if d:
-            qs = qs.filter(
-                Q(effective_from__lte=d) &
-                (Q(effective_to__isnull=True) | Q(effective_to__gte=d))
-            )
+            qs = qs.filter(Q(effective_from__lte=d) & (Q(effective_to__isnull=True) | Q(effective_to__gte=d)))
         return qs
 
     @action(detail=False, methods=['get'])
@@ -81,17 +125,14 @@ class IndividualPriceViewSet(viewsets.ModelViewSet):
 class GroupPriceViewSet(viewsets.ModelViewSet):
     queryset = GroupPrice.objects.all()
     serializer_class = GroupPriceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManagePrices]
 
     def get_queryset(self):
         qs = super().get_queryset()
         d = self.request.query_params.get('date')
         grade = self.request.query_params.get('grade')
         if d:
-            qs = qs.filter(
-                Q(effective_from__lte=d) &
-                (Q(effective_to__isnull=True) | Q(effective_to__gte=d))
-            )
+            qs = qs.filter(Q(effective_from__lte=d) & (Q(effective_to__isnull=True) | Q(effective_to__gte=d)))
         if grade:
             qs = qs.filter(class_from__lte=int(grade), class_to__gte=int(grade))
         return qs
@@ -104,16 +145,13 @@ class GroupPriceViewSet(viewsets.ModelViewSet):
 class PkshPriceViewSet(viewsets.ModelViewSet):
     queryset = PkshPrice.objects.all()
     serializer_class = PkshPriceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManagePrices]
 
     def get_queryset(self):
         qs = super().get_queryset()
         d = self.request.query_params.get('date')
         if d:
-            qs = qs.filter(
-                Q(effective_from__lte=d) &
-                (Q(effective_to__isnull=True) | Q(effective_to__gte=d))
-            )
+            qs = qs.filter(Q(effective_from__lte=d) & (Q(effective_to__isnull=True) | Q(effective_to__gte=d)))
         return qs
 
     @action(detail=False, methods=['get'])
@@ -121,43 +159,12 @@ class PkshPriceViewSet(viewsets.ModelViewSet):
         return _check_price_gaps(PkshPrice)
 
 
-def _check_price_gaps(model_class):
-    """Найти разрывы между периодами цен."""
-    prices = model_class.objects.order_by('effective_from')
-    gaps = []
-    prev = None
-    for p in prices:
-        if prev and prev.effective_to:
-            next_day = prev.effective_to + timedelta(days=1)
-            if next_day < p.effective_from:
-                gaps.append({
-                    'gap_from': str(next_day),
-                    'gap_to': str(p.effective_from - timedelta(days=1)),
-                })
-        prev = p
-    return Response({'gaps': gaps})
-
+# ── Legacy ────────────────────────────────────────────────────
 
 class RateViewSet(viewsets.ModelViewSet):
     queryset = Rate.objects.all()
     serializer_class = RateSerializer
     permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        subject_id = self.request.query_params.get('subject')
-        d = self.request.query_params.get('date')
-        rate_kind = self.request.query_params.get('rate_kind')
-        if subject_id:
-            queryset = queryset.filter(subject_id=subject_id)
-        if d:
-            queryset = queryset.filter(
-                Q(effective_from__lte=d) &
-                (Q(effective_to__isnull=True) | Q(effective_to__gte=d))
-            )
-        if rate_kind:
-            queryset = queryset.filter(rate_kind=rate_kind)
-        return queryset
 
 
 class BonusViewSet(viewsets.ModelViewSet):
@@ -165,19 +172,8 @@ class BonusViewSet(viewsets.ModelViewSet):
     serializer_class = BonusSerializer
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        teacher_id = self.request.query_params.get('teacher')
-        period_start = self.request.query_params.get('period_start')
-        period_end = self.request.query_params.get('period_end')
-        if teacher_id:
-            queryset = queryset.filter(teacher_id=teacher_id)
-        if period_start:
-            queryset = queryset.filter(period_end__gte=period_start)
-        if period_end:
-            queryset = queryset.filter(period_start__lte=period_end)
-        return queryset
 
+# ── Entries ───────────────────────────────────────────────────
 
 class IndividualLessonEntryViewSet(viewsets.ModelViewSet):
     queryset = IndividualLessonEntry.objects.all()
@@ -190,6 +186,16 @@ class IndividualLessonEntryViewSet(viewsets.ModelViewSet):
         if sheet_id:
             qs = qs.filter(payroll_sheet_id=sheet_id)
         return qs
+
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+        items = request.data if isinstance(request.data, list) else [request.data]
+        created = []
+        for item in items:
+            s = IndividualLessonEntrySerializer(data=item)
+            s.is_valid(raise_exception=True)
+            created.append(s.save())
+        return Response(IndividualLessonEntrySerializer(created, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class GroupLessonEntryViewSet(viewsets.ModelViewSet):
@@ -204,6 +210,24 @@ class GroupLessonEntryViewSet(viewsets.ModelViewSet):
             qs = qs.filter(payroll_sheet_id=sheet_id)
         return qs
 
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+        items = request.data if isinstance(request.data, list) else [request.data]
+        created = []
+        for item in items:
+            s = GroupLessonEntrySerializer(data=item)
+            s.is_valid(raise_exception=True)
+            created.append(s.save())
+        return Response(GroupLessonEntrySerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+
+class PayrollEntryViewSet(viewsets.ModelViewSet):
+    queryset = PayrollEntry.objects.all()
+    serializer_class = PayrollEntrySerializer
+    permission_classes = [IsAuthenticated]
+
+
+# ── Advances ──────────────────────────────────────────────────
 
 class AdvanceViewSet(viewsets.ModelViewSet):
     queryset = Advance.objects.all()
@@ -217,14 +241,158 @@ class AdvanceViewSet(viewsets.ModelViewSet):
             qs = qs.filter(teacher_id=teacher_id)
         return qs
 
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        role = get_role(request.user)
+        if role not in MANAGE_ROLES:
+            return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+        adv = self.get_object()
+        if adv.status != 'pending':
+            return Response({'detail': 'Аванс уже обработан'}, status=status.HTTP_400_BAD_REQUEST)
+        adv.status = 'approved'
+        adv.save()
+        if adv.advance_type == 'request' and adv.teacher and adv.teacher.user:
+            Transaction.objects.create(
+                user=adv.teacher.user,
+                transaction_type='advance_given',
+                amount=adv.amount,
+                description=f'Аванс одобрен',
+                created_by=request.user,
+            )
+        return Response(AdvanceSerializer(adv).data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        role = get_role(request.user)
+        if role not in MANAGE_ROLES:
+            return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+        adv = self.get_object()
+        if adv.status != 'pending':
+            return Response({'detail': 'Аванс уже обработан'}, status=status.HTTP_400_BAD_REQUEST)
+        adv.status = 'rejected'
+        adv.save()
+        return Response(AdvanceSerializer(adv).data)
+
     @action(detail=False, methods=['get'])
     def debt(self, request):
         teacher_id = request.query_params.get('teacher')
         if not teacher_id:
             return Response({'detail': 'teacher param required'}, status=status.HTTP_400_BAD_REQUEST)
-        debt = Advance.get_teacher_debt(int(teacher_id))
-        return Response({'teacher_id': int(teacher_id), 'debt': str(debt)})
+        return Response({'teacher_id': int(teacher_id), 'debt': str(Advance.get_teacher_debt(int(teacher_id)))})
 
+
+# ── Transactions / Balance ────────────────────────────────────
+
+class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Transaction.objects.all()
+    serializer_class = TransactionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        role = get_role(self.request.user)
+        user_id = self.request.query_params.get('user')
+        if user_id:
+            qs = qs.filter(user_id=user_id)
+        elif role == 'teacher':
+            qs = qs.filter(user=self.request.user)
+        return qs
+
+
+@api_view(['POST'])
+@perm_classes([IsAuthenticated])
+def disburse_funds(request):
+    role = get_role(request.user)
+    if role not in DISBURSE_ROLES:
+        return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+    user_id = request.data.get('user_id')
+    amount = request.data.get('amount')
+    description = request.data.get('description', 'Выдача средств')
+    if not user_id or not amount:
+        return Response({'detail': 'user_id и amount обязательны'}, status=status.HTTP_400_BAD_REQUEST)
+    amount = Decimal(str(amount))
+    if amount <= 0:
+        return Response({'detail': 'Сумма должна быть больше 0'}, status=status.HTTP_400_BAD_REQUEST)
+    target_user = User.objects.get(id=user_id)
+    balance = Transaction.get_balance(user_id)
+    if amount > balance:
+        return Response({'detail': f'Недостаточно средств на счету ({balance}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if role == 'senior_admin':
+        try:
+            my_city = request.user.profile.city_id
+            target_city = target_user.profile.city_id
+            if my_city and target_city and my_city != target_city:
+                return Response({'detail': 'Вы можете выдавать средства только пользователям вашего города'}, status=status.HTTP_403_FORBIDDEN)
+        except UserProfile.DoesNotExist:
+            pass
+
+    Transaction.objects.create(
+        user=target_user,
+        transaction_type='disbursement',
+        amount=-amount,
+        description=description,
+        created_by=request.user,
+    )
+    return Response({'balance': str(Transaction.get_balance(user_id))})
+
+
+@api_view(['POST'])
+@perm_classes([IsAuthenticated])
+def add_extra_funds(request):
+    role = get_role(request.user)
+    if role not in DISBURSE_ROLES:
+        return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+    user_id = request.data.get('user_id')
+    amount = request.data.get('amount')
+    description = request.data.get('description', 'Дополнительное начисление')
+    if not user_id or not amount:
+        return Response({'detail': 'user_id и amount обязательны'}, status=status.HTTP_400_BAD_REQUEST)
+    amount = Decimal(str(amount))
+    if amount <= 0:
+        return Response({'detail': 'Сумма должна быть больше 0'}, status=status.HTTP_400_BAD_REQUEST)
+    target_user = User.objects.get(id=user_id)
+
+    if role == 'senior_admin':
+        try:
+            my_city = request.user.profile.city_id
+            target_city = target_user.profile.city_id
+            if my_city and target_city and my_city != target_city:
+                return Response({'detail': 'Нет прав для этого города'}, status=status.HTTP_403_FORBIDDEN)
+        except UserProfile.DoesNotExist:
+            pass
+
+    Transaction.objects.create(
+        user=target_user,
+        transaction_type='extra_credit',
+        amount=amount,
+        description=description,
+        created_by=request.user,
+    )
+    return Response({'balance': str(Transaction.get_balance(user_id))})
+
+
+@api_view(['GET'])
+@perm_classes([IsAuthenticated])
+def users_list(request):
+    role = get_role(request.user)
+    if role not in (*MANAGE_ROLES, *DISBURSE_ROLES):
+        return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+
+    qs = User.objects.select_related('profile', 'teacher_profile').filter(is_active=True)
+
+    if role == 'senior_admin':
+        try:
+            city_id = request.user.profile.city_id
+            if city_id:
+                qs = qs.filter(profile__city_id=city_id)
+        except UserProfile.DoesNotExist:
+            pass
+
+    return Response(UserListSerializer(qs, many=True).data)
+
+
+# ── PayrollSheet ──────────────────────────────────────────────
 
 class PayrollSheetViewSet(viewsets.ModelViewSet):
     queryset = PayrollSheet.objects.all()
@@ -236,17 +404,18 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         return PayrollSheetSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        qs = super().get_queryset()
+        role = get_role(self.request.user)
+        if role == 'teacher':
+            try:
+                teacher = self.request.user.teacher_profile
+                qs = qs.filter(teacher=teacher)
+            except Teacher.DoesNotExist:
+                qs = qs.none()
         status_filter = self.request.query_params.get('status')
-        period_start = self.request.query_params.get('period_start')
-        period_end = self.request.query_params.get('period_end')
         if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        if period_start:
-            queryset = queryset.filter(period_end__gte=period_start)
-        if period_end:
-            queryset = queryset.filter(period_start__lte=period_end)
-        return queryset
+            qs = qs.filter(status=status_filter)
+        return qs
 
     def perform_create(self, serializer):
         teacher = serializer.validated_data.get('teacher')
@@ -254,69 +423,137 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         period_end = serializer.validated_data.get('period_end')
         title = serializer.validated_data.get('title') or ''
         if teacher and not title:
-            title = f"Расчётный лист: {teacher.full_name} ({period_start} — {period_end})"
+            title = f"РЛ: {teacher.full_name} ({period_start} — {period_end})"
         serializer.save(created_by=self.request.user, title=title or 'Без названия')
 
     def destroy(self, request, *args, **kwargs):
         sheet = self.get_object()
         if sheet.status != 'draft':
-            return Response(
-                {'detail': 'Удалять можно только расчётные листы в статусе «Черновик».'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'detail': 'Удалять можно только черновики'}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
         sheet = self.get_object()
+        if sheet.status not in ('draft', 'rejected'):
+            return Response({'detail': 'Можно отправить только черновик или отклонённый лист'}, status=status.HTTP_400_BAD_REQUEST)
         sheet.status = 'submitted'
+        sheet.rejection_comment = ''
+        total_basic = Decimal(str(request.data.get('total_basic', sheet.total_basic)))
+        total_premium = Decimal(str(request.data.get('total_premium', sheet.total_premium)))
+        total_vacation = Decimal(str(request.data.get('total_vacation', sheet.total_vacation)))
+        advance_amount = Decimal(str(request.data.get('advance_amount', sheet.advance_amount)))
+        sheet.total_basic = total_basic
+        sheet.total_premium = total_premium
+        sheet.total_vacation = total_vacation
+        sheet.advance_amount = advance_amount
         sheet.save()
         return Response({'status': 'submitted'})
 
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
+        role = get_role(request.user)
+        if role not in MANAGE_ROLES:
+            return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
         sheet = self.get_object()
+        if sheet.status != 'submitted':
+            return Response({'detail': 'Можно одобрить только отправленный лист'}, status=status.HTTP_400_BAD_REQUEST)
         sheet.status = 'approved'
         sheet.save()
+
+        if sheet.teacher and sheet.teacher.user:
+            total_credit = sheet.total_basic
+            if total_credit > 0:
+                Transaction.objects.create(
+                    user=sheet.teacher.user,
+                    transaction_type='payroll_credit',
+                    amount=total_credit,
+                    description=f'Ведомость #{sheet.id} одобрена',
+                    payroll_sheet=sheet,
+                    created_by=request.user,
+                )
+
+        if sheet.advance_amount > 0 and sheet.teacher:
+            adv = Advance.objects.create(
+                teacher=sheet.teacher,
+                advance_type='request',
+                status='approved',
+                amount=sheet.advance_amount,
+                payroll_sheet=sheet,
+                description='Аванс по ведомости (одобрен)',
+                date=date.today(),
+            )
+            if sheet.teacher.user:
+                Transaction.objects.create(
+                    user=sheet.teacher.user,
+                    transaction_type='advance_given',
+                    amount=sheet.advance_amount,
+                    description=f'Аванс по ведомости #{sheet.id}',
+                    payroll_sheet=sheet,
+                    created_by=request.user,
+                )
+
         return Response({'status': 'approved'})
 
     @action(detail=True, methods=['post'])
-    def request_advance(self, request, pk=None):
-        """Запросить аванс"""
+    def reject(self, request, pk=None):
+        role = get_role(request.user)
+        if role not in MANAGE_ROLES:
+            return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
         sheet = self.get_object()
-        amount = request.data.get('amount')
-        if not amount or Decimal(str(amount)) <= 0:
-            return Response({'detail': 'Укажите сумму аванса'}, status=status.HTTP_400_BAD_REQUEST)
-        if not sheet.teacher_id:
-            return Response({'detail': 'Педагог не указан'}, status=status.HTTP_400_BAD_REQUEST)
-        advance = Advance.objects.create(
-            teacher=sheet.teacher,
-            advance_type='request',
-            amount=Decimal(str(amount)),
-            payroll_sheet=sheet,
-            description=request.data.get('description', 'Запрос аванса'),
-            date=date.today(),
-        )
-        return Response(AdvanceSerializer(advance).data, status=status.HTTP_201_CREATED)
+        if sheet.status != 'submitted':
+            return Response({'detail': 'Можно отклонить только отправленный лист'}, status=status.HTTP_400_BAD_REQUEST)
+        comment = request.data.get('comment', '')
+        if not comment:
+            return Response({'detail': 'Укажите причину отклонения'}, status=status.HTTP_400_BAD_REQUEST)
+        sheet.status = 'rejected'
+        sheet.rejection_comment = comment
+        sheet.save()
+        return Response({'status': 'rejected'})
 
     @action(detail=True, methods=['post'])
-    def pay_advance(self, request, pk=None):
-        """Выплатить аванс (уменьшить долг)"""
+    def request_advance(self, request, pk=None):
         sheet = self.get_object()
         amount = request.data.get('amount')
         if not amount or Decimal(str(amount)) <= 0:
-            return Response({'detail': 'Укажите сумму выплаты'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Укажите сумму'}, status=status.HTTP_400_BAD_REQUEST)
         if not sheet.teacher_id:
             return Response({'detail': 'Педагог не указан'}, status=status.HTTP_400_BAD_REQUEST)
-        advance = Advance.objects.create(
+        sheet.advance_amount = Decimal(str(amount))
+        sheet.save()
+        return Response({'advance_amount': str(sheet.advance_amount)})
+
+    @action(detail=True, methods=['post'])
+    def repay_advance(self, request, pk=None):
+        sheet = self.get_object()
+        amount = request.data.get('amount')
+        if not amount or Decimal(str(amount)) <= 0:
+            return Response({'detail': 'Укажите сумму'}, status=status.HTTP_400_BAD_REQUEST)
+        if not sheet.teacher_id:
+            return Response({'detail': 'Педагог не указан'}, status=status.HTTP_400_BAD_REQUEST)
+        amount = Decimal(str(amount))
+        debt = Advance.get_teacher_debt(sheet.teacher_id)
+        if amount > debt:
+            return Response({'detail': f'Сумма погашения не может превышать долг ({debt}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+        Advance.objects.create(
             teacher=sheet.teacher,
-            advance_type='payment',
-            amount=Decimal(str(amount)),
+            advance_type='repayment',
+            status='approved',
+            amount=amount,
             payroll_sheet=sheet,
-            description=request.data.get('description', 'Выплата аванса'),
+            description='Погашение аванса',
             date=date.today(),
         )
-        return Response(AdvanceSerializer(advance).data, status=status.HTTP_201_CREATED)
+        if sheet.teacher.user:
+            Transaction.objects.create(
+                user=sheet.teacher.user,
+                transaction_type='advance_repaid',
+                amount=-amount,
+                description=f'Погашение аванса по ведомости #{sheet.id}',
+                payroll_sheet=sheet,
+                created_by=request.user,
+            )
+        return Response({'debt': str(Advance.get_teacher_debt(sheet.teacher_id))})
 
     @action(detail=True, methods=['get'])
     def export_excel(self, request, pk=None):
@@ -324,42 +561,37 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Расчётный лист"
-
         header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF", size=12)
+        header_font = Font(bold=True, color="FFFFFF", size=11)
         title_font = Font(bold=True, size=14)
-        border = Border(
-            left=Side(style='thin'), right=Side(style='thin'),
-            top=Side(style='thin'), bottom=Side(style='thin')
-        )
+        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
-        ws.merge_cells('A1:H1')
-        ws['A1'] = f"Расчётный лист: {sheet.title}"
+        ws.merge_cells('A1:F1')
+        ws['A1'] = sheet.title
         ws['A1'].font = title_font
-        ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
-        ws['A2'] = f"Период: {sheet.period_start} — {sheet.period_end}"
+        ws['A1'].alignment = Alignment(horizontal='center')
         teacher_name = sheet.teacher.full_name if sheet.teacher else 'Не указан'
-        ws['A3'] = f"Сотрудник: {teacher_name}"
-        ws['A4'] = f"Статус: {sheet.get_status_display()}"
+        ws['A2'] = f"Сотрудник: {teacher_name}"
+        ws['A3'] = f"Период: {sheet.period_start} — {sheet.period_end}"
+        row = 5
 
-        row = 6
         if sheet.individual_entries.exists():
             ws.merge_cells(f'A{row}:D{row}')
             ws[f'A{row}'] = 'Индивидуальные занятия'
             ws[f'A{row}'].font = Font(bold=True, size=12)
             ws[f'A{row}'].alignment = Alignment(horizontal='center')
             row += 1
-            for col, header in enumerate(['ФИ ученика', 'Занятий', 'Часов', 'Даты занятий'], 1):
-                cell = ws.cell(row=row, column=col, value=header)
+            for col, h in enumerate(['ФИ ученика', 'Занятий', 'Часов', 'Даты'], 1):
+                cell = ws.cell(row=row, column=col, value=h)
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.border = border
             row += 1
-            for entry in sheet.individual_entries.all():
-                ws.cell(row=row, column=1, value=entry.student_name).border = border
-                ws.cell(row=row, column=2, value=entry.lessons_count).border = border
-                ws.cell(row=row, column=3, value=float(entry.hours)).border = border
-                ws.cell(row=row, column=4, value=entry.lesson_dates).border = border
+            for e in sheet.individual_entries.all():
+                ws.cell(row=row, column=1, value=e.student_name).border = border
+                ws.cell(row=row, column=2, value=e.lessons_count).border = border
+                ws.cell(row=row, column=3, value=float(e.hours)).border = border
+                ws.cell(row=row, column=4, value=e.lesson_dates).border = border
                 row += 1
             row += 1
 
@@ -369,89 +601,25 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
             ws[f'A{row}'].font = Font(bold=True, size=12)
             ws[f'A{row}'].alignment = Alignment(horizontal='center')
             row += 1
-            for col, header in enumerate(['Состав группы', 'Детей', 'Класс', 'Занятий', 'Часов', 'Даты занятий'], 1):
-                cell = ws.cell(row=row, column=col, value=header)
+            for col, h in enumerate(['Состав', 'Детей', 'Класс', 'Занятий', 'Часов', 'Даты'], 1):
+                cell = ws.cell(row=row, column=col, value=h)
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.border = border
             row += 1
-            for entry in sheet.group_entries.all():
-                prefix = "[ПКШ] " if entry.is_pksh else ""
-                ws.cell(row=row, column=1, value=f"{prefix}{entry.group_name}").border = border
-                ws.cell(row=row, column=2, value=entry.children_count).border = border
-                ws.cell(row=row, column=3, value=entry.grade_class).border = border
-                ws.cell(row=row, column=4, value=entry.lessons_count).border = border
-                ws.cell(row=row, column=5, value=float(entry.hours)).border = border
-                ws.cell(row=row, column=6, value=entry.lesson_dates).border = border
+            for e in sheet.group_entries.all():
+                ws.cell(row=row, column=1, value=e.group_name).border = border
+                ws.cell(row=row, column=2, value=e.children_count).border = border
+                ws.cell(row=row, column=3, value='ПКШ' if e.is_pksh else str(e.grade_class)).border = border
+                ws.cell(row=row, column=4, value=e.lessons_count).border = border
+                ws.cell(row=row, column=5, value=float(e.hours)).border = border
+                ws.cell(row=row, column=6, value=e.lesson_dates).border = border
                 row += 1
 
-        column_widths = [30, 12, 10, 10, 10, 30, 12, 12]
-        for col, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(col)].width = width
+        for col, w in enumerate([30, 12, 10, 10, 10, 30], 1):
+            ws.column_dimensions[get_column_letter(col)].width = w
 
-        http_response = HttpResponse(
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        filename = f"payroll_{sheet.id}_{sheet.period_start}_{sheet.period_end}.xlsx"
-        http_response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        wb.save(http_response)
-        return http_response
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-@ensure_csrf_cookie
-def csrf_cookie_view(request):
-    return Response({'detail': 'CSRF cookie set'})
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-    if not username or not password:
-        return Response(
-            {'detail': 'Необходимо указать имя пользователя и пароль'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    user = authenticate(request, username=username, password=password)
-    if user is not None:
-        login(request, user)
-        serializer = UserSerializer(user)
-        return Response({'user': serializer.data})
-    else:
-        return Response(
-            {'detail': 'Неверные учетные данные'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def logout_view(request):
-    logout(request)
-    return Response({'detail': 'Выход выполнен успешно'})
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_view(request):
-    serializer = UserSerializer(request.user)
-    return Response(serializer.data)
-
-
-class PayrollEntryViewSet(viewsets.ModelViewSet):
-    queryset = PayrollEntry.objects.all()
-    serializer_class = PayrollEntrySerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        sheet_id = self.request.query_params.get('payroll_sheet')
-        teacher_id = self.request.query_params.get('teacher')
-        if sheet_id:
-            queryset = queryset.filter(payroll_sheet_id=sheet_id)
-        if teacher_id:
-            queryset = queryset.filter(teacher_id=teacher_id)
-        return queryset
+        resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp['Content-Disposition'] = f'attachment; filename="payroll_{sheet.id}.xlsx"'
+        wb.save(resp)
+        return resp

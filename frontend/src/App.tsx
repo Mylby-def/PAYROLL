@@ -9,7 +9,9 @@ import PayrollSheetCreatePage from './pages/PayrollSheetCreatePage'
 import TeachersPage from './pages/TeachersPage'
 import SubjectsPage from './pages/SubjectsPage'
 import RatesPage from './pages/RatesPage'
-import BonusesPage from './pages/BonusesPage'
+import ApprovalPage from './pages/ApprovalPage'
+import FinancePage from './pages/FinancePage'
+import CitiesPage from './pages/CitiesPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -23,11 +25,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/"
-          element={
-            <PrivateRoute>
-              <Layout />
-            </PrivateRoute>
-          }
+          element={<PrivateRoute><Layout /></PrivateRoute>}
         >
           <Route index element={<DashboardPage />} />
           <Route path="payroll-sheets" element={<PayrollSheetsPage />} />
@@ -36,7 +34,9 @@ function App() {
           <Route path="teachers" element={<TeachersPage />} />
           <Route path="subjects" element={<SubjectsPage />} />
           <Route path="rates" element={<RatesPage />} />
-          <Route path="bonuses" element={<BonusesPage />} />
+          <Route path="approval" element={<ApprovalPage />} />
+          <Route path="finance" element={<FinancePage />} />
+          <Route path="cities" element={<CitiesPage />} />
         </Route>
       </Routes>
     </Router>
