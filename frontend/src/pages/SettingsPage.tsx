@@ -21,9 +21,12 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-lg">
-      <h1 className="text-xl font-bold text-slate-900 mb-5">Настройки</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Настройки</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Управление аккаунтом</p>
+      </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
         <h2 className="text-sm font-semibold text-slate-900 mb-3">Смена пароля</h2>
         <form onSubmit={handleChangePw} className="space-y-3">
           {msg && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded-lg text-sm">{msg}</div>}
@@ -40,7 +43,7 @@ export default function SettingsPage() {
         </form>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-sm font-semibold text-slate-900 mb-2">Информация</h2>
         <div className="text-sm text-slate-600 space-y-1">
           <p>Логин: <span className="font-medium text-slate-900">{user?.username}</span></p>

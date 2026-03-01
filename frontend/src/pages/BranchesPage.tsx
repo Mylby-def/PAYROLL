@@ -42,15 +42,18 @@ export default function BranchesPage() {
 
   return (
     <div className="max-w-4xl">
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-xl font-bold text-slate-900">Филиалы</h1>
-        <button onClick={() => setShowForm(!showForm)} className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-sm transition">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Филиалы</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Счета и балансы филиалов</p>
+        </div>
+        <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/20 transition">
           {showForm ? 'Отмена' : 'Создать филиал'}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white rounded-xl border border-slate-200 p-4 mb-5 flex flex-wrap gap-3 items-end">
+        <form onSubmit={handleCreate} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-6 flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[160px]">
             <label className="block text-[11px] font-medium text-slate-500 mb-1">Название</label>
             <input type="text" required className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
@@ -68,7 +71,7 @@ export default function BranchesPage() {
 
       <div className="grid gap-3">
         {branches.map(br => (
-          <div key={br.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+          <div key={br.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex items-center justify-between hover:shadow-lg hover:border-indigo-100 transition-all">
             <div>
               <p className="text-sm font-semibold text-slate-900">{br.name}</p>
               <p className="text-[11px] text-slate-400">{br.city_name}</p>

@@ -28,16 +28,19 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="flex items-center justify-between mb-5">
-        <h1 className="text-xl font-bold text-slate-900">Уведомления</h1>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Уведомления</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Сообщения и оповещения</p>
+        </div>
         {notifs.some(n => !n.is_read) && (
-          <button onClick={markAllRead} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition">Прочитать все</button>
+          <button onClick={markAllRead} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition">Прочитать все</button>
         )}
       </div>
       <div className="space-y-2">
         {notifs.map(n => (
           <div key={n.id} onClick={() => !n.is_read && markRead(n.id)}
-            className={`rounded-xl border p-4 transition-all cursor-pointer ${n.is_read ? 'bg-white border-slate-200' : 'bg-indigo-50/50 border-indigo-200 shadow-sm'}`}>
+            className={`rounded-2xl border p-5 transition-all cursor-pointer ${n.is_read ? 'bg-white border-slate-200 shadow-sm hover:shadow-md' : 'bg-indigo-50/50 border-indigo-200 shadow-sm'}`}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <p className={`text-sm font-medium ${n.is_read ? 'text-slate-700' : 'text-slate-900'}`}>{n.title}</p>

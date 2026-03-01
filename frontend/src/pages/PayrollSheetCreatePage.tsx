@@ -79,8 +79,11 @@ export default function PayrollSheetCreatePage() {
         &larr; Назад к списку
       </Link>
       <div className="max-w-lg mt-4">
-        <h1 className="text-2xl font-bold text-slate-900 mb-6">Новый расчётный лист</h1>
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-900">Новый расчётный лист</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Создайте ведомость за выбранный период</p>
+        </div>
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>
           )}

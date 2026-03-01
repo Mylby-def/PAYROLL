@@ -583,8 +583,7 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         sheet.total_premium = Decimal(str(request.data.get('total_premium', sheet.total_premium)))
         sheet.total_vacation = Decimal(str(request.data.get('total_vacation', sheet.total_vacation)))
         adv = Decimal(str(request.data.get('advance_amount', sheet.advance_amount)))
-        if adv > sheet.total_basic:
-            return Response({'detail': f'Аванс не может превышать заработок ({sheet.total_basic}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+        # Аванс может быть любой суммы — одобрение на усмотрение РЛ
         sheet.advance_amount = adv
         sheet.save()
         _log(request.user, f'Отправка РЛ #{sheet.id}')
@@ -644,8 +643,7 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         amount = Decimal(str(request.data.get('amount', 0)))
         if amount <= 0:
             return Response({'detail': 'Сумма > 0'}, status=status.HTTP_400_BAD_REQUEST)
-        if amount > sheet.total_basic:
-            return Response({'detail': f'Не может превышать заработок ({sheet.total_basic}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+        # Любая сумма разрешена — решение об одобрении принимают при проверке РЛ
         sheet.advance_amount = amount
         sheet.save()
         return Response({'advance_amount': str(sheet.advance_amount)})
@@ -661,10 +659,11 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         debt = Advance.get_teacher_debt(sheet.teacher_id)
         if amount > debt:
             return Response({'detail': f'Не может превышать долг ({debt}₽)'}, status=status.HTTP_400_BAD_REQUEST)
-        if sheet.teacher.user:
-            bal = Transaction.get_balance(sheet.teacher.user.id, 'main')
-            if amount > bal:
-                return Response({'detail': f'Недостаточно средств ({bal}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+        # Максимум к погашению — не больше долга и не больше заработка по данному РЛ
+        max_repay = min(debt, sheet.total_basic)
+        if amount > max_repay:
+            return Response({'detail': f'Макс. к погашению по этому РЛ: {max_repay}₽'}, status=status.HTTP_400_BAD_REQUEST)
+        # Не проверяем баланс — человек сам решает сколько погасить, не обязываем отдавать всё сразу
         Advance.objects.create(teacher=sheet.teacher, advance_type='repayment', status='approved', amount=amount, payroll_sheet=sheet, description='Погашение аванса', date=date.today())
         if sheet.teacher.user:
             Transaction.objects.create(user=sheet.teacher.user, transaction_type='advance_repaid', balance_type='main', amount=-amount, description='Погашение аванса', payroll_sheet=sheet, created_by=request.user)

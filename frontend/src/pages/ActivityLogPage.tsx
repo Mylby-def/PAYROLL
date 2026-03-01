@@ -17,8 +17,11 @@ export default function ActivityLogPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-slate-900 mb-5">Журнал активности</h1>
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Журнал активности</h1>
+        <p className="text-sm text-slate-500 mt-0.5">История действий в системе</p>
+      </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full">
             <thead><tr className="bg-slate-50 border-b border-slate-200">
