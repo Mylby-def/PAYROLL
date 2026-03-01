@@ -1,0 +1,4 @@
+{
+  "engine": "sqlite3",
+  "name": "db.sqlite3"
+}
