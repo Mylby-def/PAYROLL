@@ -6,12 +6,15 @@ from decimal import Decimal
 
 ROLE_CHOICES = [
     ('teacher', 'Педагог'),
+    ('employee', 'Сотрудник'),
     ('administrator', 'Администратор'),
     ('accountant', 'Бухгалтер'),
     ('senior_admin', 'Старший администратор'),
     ('chief_admin', 'Главный администратор'),
     ('moderator', 'Модератор'),
 ]
+
+CAN_SUBMIT_SHEETS = ('teacher', 'employee', 'moderator')
 
 
 class City(models.Model):
@@ -26,10 +29,45 @@ class City(models.Model):
         return self.name
 
 
+class Branch(models.Model):
+    name = models.CharField(max_length=200, verbose_name="Название филиала")
+    city = models.ForeignKey(City, on_delete=models.CASCADE, related_name='branches', verbose_name="Город")
+    balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'), verbose_name="Баланс")
+
+    class Meta:
+        verbose_name = "Филиал"
+        verbose_name_plural = "Филиалы"
+        ordering = ['city', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.city.name})"
+
+
+class BranchTransaction(models.Model):
+    TYPE_CHOICES = [
+        ('deposit', 'Внесение'),
+        ('withdrawal', 'Снятие'),
+    ]
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='transactions')
+    transaction_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Транзакция филиала"
+        verbose_name_plural = "Транзакции филиалов"
+        ordering = ['-created_at']
+
+
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='teacher', verbose_name="Роль")
     city = models.ForeignKey(City, on_delete=models.SET_NULL, null=True, blank=True, related_name='users', verbose_name="Город")
+    branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, null=True, blank=True, related_name='users', verbose_name="Филиал")
+    totp_secret = models.CharField(max_length=64, blank=True, verbose_name="2FA секрет")
+    totp_enabled = models.BooleanField(default=False, verbose_name="2FA включена")
 
     class Meta:
         verbose_name = "Профиль пользователя"
@@ -37,6 +75,31 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.username} ({self.get_role_display()})"
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    title = models.CharField(max_length=300)
+    message = models.TextField(blank=True)
+    is_read = models.BooleanField(default=False)
+    link = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username}: {self.title}"
+
+
+class ActivityLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='activity_logs')
+    action = models.CharField(max_length=300)
+    details = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class Subject(models.Model):
@@ -70,59 +133,47 @@ class Teacher(models.Model):
 
 
 class IndividualPrice(models.Model):
-    basic_rate = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Основная цена")
-    premium_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Премиальные")
-    vacation_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Отпускные")
-    effective_from = models.DateField(verbose_name="Действует с")
-    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует до")
+    basic_rate = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))])
+    premium_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    vacation_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Цена индивидуальных занятий"
-        verbose_name_plural = "Цены индивидуальных занятий"
         ordering = ['-effective_from']
 
     def __str__(self):
-        return f"Инд. {self.basic_rate}₽ ({self.effective_from} — {self.effective_to or '...'})"
+        return f"Инд. {self.basic_rate}₽"
 
 
 class GroupPrice(models.Model):
-    class_from = models.IntegerField(default=1, validators=[MinValueValidator(0)], verbose_name="Класс от")
-    class_to = models.IntegerField(default=11, validators=[MinValueValidator(0)], verbose_name="Класс до")
-    basic_rate = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Основная цена")
-    premium_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Премиальные")
-    vacation_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Отпускные")
-    effective_from = models.DateField(verbose_name="Действует с")
-    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует до")
+    class_from = models.IntegerField(default=1)
+    class_to = models.IntegerField(default=11)
+    basic_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    premium_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    vacation_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Цена групповых занятий"
-        verbose_name_plural = "Цены групповых занятий"
         ordering = ['-effective_from', 'class_from']
-
-    def __str__(self):
-        return f"Груп. {self.class_from}-{self.class_to} кл. {self.basic_rate}₽"
 
 
 class PkshPrice(models.Model):
-    basic_rate = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Основная цена")
-    premium_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Премиальные")
-    vacation_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))], verbose_name="Отпускные")
-    effective_from = models.DateField(verbose_name="Действует с")
-    effective_to = models.DateField(null=True, blank=True, verbose_name="Действует до")
+    basic_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    premium_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    vacation_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Цена ПКШ"
-        verbose_name_plural = "Цены ПКШ"
         ordering = ['-effective_from']
-
-    def __str__(self):
-        return f"ПКШ {self.basic_rate}₽ ({self.effective_from} — {self.effective_to or '...'})"
 
 
 class Rate(models.Model):
@@ -138,12 +189,7 @@ class Rate(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Тариф (устар.)"
-        verbose_name_plural = "Тарифы (устар.)"
         ordering = ['-effective_from']
-
-    def __str__(self):
-        return f"{self.subject} — {self.amount}"
 
 
 class Bonus(models.Model):
@@ -156,12 +202,7 @@ class Bonus(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Премиальные"
-        verbose_name_plural = "Премиальные"
         ordering = ['-period_start']
-
-    def __str__(self):
-        return f"{self.teacher} — {self.amount}"
 
 
 class PayrollSheet(models.Model):
@@ -173,13 +214,13 @@ class PayrollSheet(models.Model):
         ('paid', 'Оплачен'),
     ]
 
-    teacher = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='payroll_sheets', verbose_name="Педагог")
-    title = models.CharField(max_length=200, verbose_name="Название")
-    period_start = models.DateField(verbose_name="Период с")
-    period_end = models.DateField(verbose_name="Период по")
+    teacher = models.ForeignKey(Teacher, on_delete=models.SET_NULL, null=True, blank=True, related_name='payroll_sheets')
+    title = models.CharField(max_length=200)
+    period_start = models.DateField()
+    period_end = models.DateField()
     subjects = models.ManyToManyField(Subject, blank=True, related_name='payroll_sheets')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
-    rejection_comment = models.TextField(blank=True, verbose_name="Причина отклонения")
+    rejection_comment = models.TextField(blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_payroll_sheets')
     notes = models.TextField(blank=True)
     total_basic = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
@@ -190,8 +231,6 @@ class PayrollSheet(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Расчётный лист"
-        verbose_name_plural = "Расчётные листы"
         ordering = ['-period_start', '-created_at']
 
     def __str__(self):
@@ -215,56 +254,40 @@ class PayrollEntry(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Запись (устар.)"
-        verbose_name_plural = "Записи (устар.)"
         ordering = ['date']
-
-    def __str__(self):
-        return f"{self.teacher} — {self.date}: {self.amount}"
 
 
 class IndividualLessonEntry(models.Model):
     payroll_sheet = models.ForeignKey(PayrollSheet, on_delete=models.CASCADE, related_name='individual_entries')
-    student_name = models.CharField(max_length=200, verbose_name="ФИ ученика")
-    lessons_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
-    hours = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))])
+    student_name = models.CharField(max_length=200)
+    lessons_count = models.IntegerField(default=0)
+    hours = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0.00'))
     lesson_dates = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Индивидуальное занятие"
-        verbose_name_plural = "Индивидуальные занятия"
         ordering = ['student_name']
-
-    def __str__(self):
-        return f"{self.student_name} — {self.lessons_count} зан."
 
 
 class GroupLessonEntry(models.Model):
-    """grade_class=0 означает ПКШ"""
+    """grade_class=0 = ПКШ"""
     payroll_sheet = models.ForeignKey(PayrollSheet, on_delete=models.CASCADE, related_name='group_entries')
-    group_name = models.CharField(max_length=300, verbose_name="Состав группы")
-    children_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
-    grade_class = models.IntegerField(default=1, validators=[MinValueValidator(0)], verbose_name="Класс (0=ПКШ)")
-    lessons_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
-    hours = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0.00'), validators=[MinValueValidator(Decimal('0.00'))])
+    group_name = models.CharField(max_length=300)
+    children_count = models.IntegerField(default=0)
+    grade_class = models.IntegerField(default=1)
+    lessons_count = models.IntegerField(default=0)
+    hours = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal('0.00'))
     lesson_dates = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Групповое занятие"
-        verbose_name_plural = "Групповые занятия"
         ordering = ['group_name']
 
     @property
     def is_pksh(self):
         return self.grade_class == 0
-
-    def __str__(self):
-        prefix = "[ПКШ] " if self.is_pksh else ""
-        return f"{prefix}{self.group_name} — {self.children_count} дет."
 
 
 class Advance(models.Model):
@@ -288,12 +311,7 @@ class Advance(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "Аванс"
-        verbose_name_plural = "Авансы"
         ordering = ['-date', '-created_at']
-
-    def __str__(self):
-        return f"{self.teacher} — {self.get_advance_type_display()} {self.amount}₽ ({self.get_status_display()})"
 
     @staticmethod
     def get_teacher_debt(teacher_id):
@@ -332,19 +350,14 @@ class Transaction(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
     transaction_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
     balance_type = models.CharField(max_length=20, choices=BALANCE_TYPE_CHOICES, default='main')
-    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Сумма")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
     description = models.TextField(blank=True)
     payroll_sheet = models.ForeignKey(PayrollSheet, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_transactions')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "Транзакция"
-        verbose_name_plural = "Транзакции"
         ordering = ['-created_at']
-
-    def __str__(self):
-        return f"{self.user.username} — {self.get_transaction_type_display()} {self.amount}₽"
 
     @staticmethod
     def get_balance(user_id, balance_type='main'):

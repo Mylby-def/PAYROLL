@@ -1,63 +1,94 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
-    City, UserProfile, Teacher, Subject, ROLE_CHOICES,
-    IndividualPrice, GroupPrice, PkshPrice,
-    Rate, Bonus, PayrollSheet, PayrollEntry,
-    IndividualLessonEntry, GroupLessonEntry, Advance, Transaction
+    City, Branch, BranchTransaction, UserProfile, Teacher, Subject,
+    IndividualPrice, GroupPrice, PkshPrice, Rate, Bonus,
+    PayrollSheet, PayrollEntry, IndividualLessonEntry, GroupLessonEntry,
+    Advance, Transaction, Notification, ActivityLog, ROLE_CHOICES
 )
 
 
 class CitySerializer(serializers.ModelSerializer):
+    branch_count = serializers.SerializerMethodField()
     class Meta:
         model = City
+        fields = ['id', 'name', 'branch_count']
+    def get_branch_count(self, obj):
+        return obj.branches.count()
+
+
+class BranchSerializer(serializers.ModelSerializer):
+    city_name = serializers.CharField(source='city.name', read_only=True)
+    class Meta:
+        model = Branch
         fields = '__all__'
 
 
-class UserProfileSerializer(serializers.ModelSerializer):
+class BranchTransactionSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
     class Meta:
-        model = UserProfile
-        fields = ['role', 'city']
+        model = BranchTransaction
+        fields = '__all__'
+    def get_created_by_name(self, obj):
+        return obj.created_by.username if obj.created_by else None
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = '__all__'
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+    class Meta:
+        model = ActivityLog
+        fields = '__all__'
+    def get_user_name(self, obj):
+        return obj.user.username if obj.user else None
 
 
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     city = serializers.SerializerMethodField()
     city_id = serializers.SerializerMethodField()
+    branch_id = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
     balance_premium = serializers.SerializerMethodField()
     balance_vacation = serializers.SerializerMethodField()
     teacher_id = serializers.SerializerMethodField()
+    unread_notifications = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name',
-                  'role', 'city', 'city_id', 'balance', 'balance_premium', 'balance_vacation', 'teacher_id']
+                  'role', 'city', 'city_id', 'branch_id',
+                  'balance', 'balance_premium', 'balance_vacation',
+                  'teacher_id', 'unread_notifications']
 
     def get_role(self, obj):
         try: return obj.profile.role
         except: return 'teacher'
-
     def get_city(self, obj):
         try: return obj.profile.city.name if obj.profile.city else None
         except: return None
-
     def get_city_id(self, obj):
-        try: return obj.profile.city_id if obj.profile.city else None
+        try: return obj.profile.city_id
         except: return None
-
+    def get_branch_id(self, obj):
+        try: return obj.profile.branch_id
+        except: return None
     def get_balance(self, obj):
         return str(Transaction.get_balance(obj.id, 'main'))
-
     def get_balance_premium(self, obj):
         return str(Transaction.get_balance(obj.id, 'premium'))
-
     def get_balance_vacation(self, obj):
         return str(Transaction.get_balance(obj.id, 'vacation'))
-
     def get_teacher_id(self, obj):
         try: return obj.teacher_profile.id
         except: return None
+    def get_unread_notifications(self, obj):
+        return obj.notifications.filter(is_read=False).count()
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -114,18 +145,15 @@ class IndividualPriceSerializer(serializers.ModelSerializer):
         model = IndividualPrice
         fields = '__all__'
 
-
 class GroupPriceSerializer(serializers.ModelSerializer):
     class Meta:
         model = GroupPrice
         fields = '__all__'
 
-
 class PkshPriceSerializer(serializers.ModelSerializer):
     class Meta:
         model = PkshPrice
         fields = '__all__'
-
 
 class RateSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True)
@@ -133,19 +161,16 @@ class RateSerializer(serializers.ModelSerializer):
         model = Rate
         fields = '__all__'
 
-
 class BonusSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
     class Meta:
         model = Bonus
         fields = '__all__'
 
-
 class IndividualLessonEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = IndividualLessonEntry
         fields = '__all__'
-
 
 class GroupLessonEntrySerializer(serializers.ModelSerializer):
     is_pksh = serializers.BooleanField(read_only=True)
@@ -154,34 +179,27 @@ class GroupLessonEntrySerializer(serializers.ModelSerializer):
         fields = ['id', 'payroll_sheet', 'group_name', 'children_count', 'grade_class',
                   'is_pksh', 'lessons_count', 'hours', 'lesson_dates', 'created_at', 'updated_at']
 
-
 class AdvanceSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
     class Meta:
         model = Advance
         fields = '__all__'
 
-
 class TransactionSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     user_city = serializers.SerializerMethodField()
-
     class Meta:
         model = Transaction
         fields = '__all__'
-
     def get_user_name(self, obj):
         try: return obj.user.teacher_profile.full_name
         except: return obj.user.get_full_name() or obj.user.username
-
     def get_created_by_name(self, obj):
         return obj.created_by.username if obj.created_by else None
-
     def get_user_city(self, obj):
         try: return obj.user.profile.city.name if obj.user.profile.city else None
         except: return None
-
 
 class PayrollEntrySerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
@@ -189,7 +207,6 @@ class PayrollEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = PayrollEntry
         fields = '__all__'
-
 
 class PayrollSheetSerializer(serializers.ModelSerializer):
     entries = PayrollEntrySerializer(many=True, read_only=True)
@@ -216,18 +233,14 @@ class PayrollSheetSerializer(serializers.ModelSerializer):
 
     def get_created_by_name(self, obj):
         return obj.created_by.username if obj.created_by else None
-
     def get_teacher_name(self, obj):
         return obj.teacher.full_name if obj.teacher_id else None
-
     def get_subject_ids(self, obj):
         return list(obj.subjects.values_list('id', flat=True))
-
     def get_advance_debt(self, obj):
         if obj.teacher_id:
             return str(Advance.get_teacher_debt(obj.teacher_id))
         return '0.00'
-
     def create(self, validated_data):
         subjects = validated_data.pop('subjects', [])
         sheet = super().create(validated_data)
@@ -246,13 +259,10 @@ class PayrollSheetListSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'teacher', 'teacher_name', 'period_start', 'period_end',
                   'status', 'rejection_comment', 'total_basic', 'total_premium', 'total_vacation', 'advance_amount',
                   'entries_count', 'created_by_name', 'created_at', 'updated_at']
-
     def get_entries_count(self, obj):
         return obj.individual_entries.count() + obj.group_entries.count()
-
     def get_created_by_name(self, obj):
         return obj.created_by.username if obj.created_by else None
-
     def get_teacher_name(self, obj):
         return obj.teacher.full_name if obj.teacher_id else None
 
@@ -261,6 +271,8 @@ class UserListSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     city_name = serializers.SerializerMethodField()
     city_id = serializers.SerializerMethodField()
+    branch_id = serializers.SerializerMethodField()
+    branch_name = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
     balance_premium = serializers.SerializerMethodField()
     balance_vacation = serializers.SerializerMethodField()
@@ -269,29 +281,30 @@ class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'full_name', 'role', 'city_name', 'city_id',
+                  'branch_id', 'branch_name',
                   'balance', 'balance_premium', 'balance_vacation', 'is_active']
 
     def get_role(self, obj):
         try: return obj.profile.role
         except: return None
-
     def get_city_name(self, obj):
         try: return obj.profile.city.name if obj.profile.city else None
         except: return None
-
     def get_city_id(self, obj):
         try: return obj.profile.city_id
         except: return None
-
+    def get_branch_id(self, obj):
+        try: return obj.profile.branch_id
+        except: return None
+    def get_branch_name(self, obj):
+        try: return obj.profile.branch.name if obj.profile.branch else None
+        except: return None
     def get_balance(self, obj):
         return str(Transaction.get_balance(obj.id, 'main'))
-
     def get_balance_premium(self, obj):
         return str(Transaction.get_balance(obj.id, 'premium'))
-
     def get_balance_vacation(self, obj):
         return str(Transaction.get_balance(obj.id, 'vacation'))
-
     def get_full_name(self, obj):
         try: return obj.teacher_profile.full_name
         except: return obj.get_full_name() or obj.username

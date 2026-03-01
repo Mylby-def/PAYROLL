@@ -18,7 +18,7 @@ export default function PayrollSheetCreatePage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const isTeacher = user?.role === 'teacher'
+  const isTeacher = user?.role === 'teacher' || user?.role === 'employee'
 
   useEffect(() => {
     Promise.all([api.get('/teachers/'), api.get('/subjects/')])

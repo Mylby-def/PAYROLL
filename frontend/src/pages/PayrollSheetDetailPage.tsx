@@ -283,10 +283,21 @@ export default function PayrollSheetDetailPage() {
             <tbody className="divide-y divide-slate-100">
               {indEntries.map((e) => (
                 <tr key={e.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-sm text-slate-900">{e.student_name}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.lessons_count}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.hours}</td>
-                  <td className="px-4 py-3 text-sm text-slate-500">{e.lesson_dates}</td>
+                  {isDraft ? (
+                    <>
+                      <td className="px-4 py-1.5"><input type="text" defaultValue={e.student_name} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400" onBlur={(ev) => api.patch(`/individual-lesson-entries/${e.id}/`, { student_name: ev.target.value }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="number" min="0" defaultValue={e.lessons_count} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400" onBlur={(ev) => api.patch(`/individual-lesson-entries/${e.id}/`, { lessons_count: parseInt(ev.target.value) || 0 }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="number" step="0.01" min="0" defaultValue={e.hours} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400" onBlur={(ev) => api.patch(`/individual-lesson-entries/${e.id}/`, { hours: parseFloat(ev.target.value) || 0 }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="date" defaultValue={e.lesson_dates} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 [color-scheme:light]" onBlur={(ev) => api.patch(`/individual-lesson-entries/${e.id}/`, { lesson_dates: ev.target.value }).then(() => fetchSheet())} /></td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-4 py-3 text-sm text-slate-900">{e.student_name}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{e.lessons_count}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{e.hours}</td>
+                      <td className="px-4 py-3 text-sm text-slate-500">{e.lesson_dates}</td>
+                    </>
+                  )}
                   {isDraft && <td className="px-4 py-3 text-right"><button onClick={() => handleDeleteInd(e.id)} className="text-xs text-red-500 hover:text-red-700">✕</button></td>}
                 </tr>
               ))}
@@ -342,16 +353,26 @@ export default function PayrollSheetDetailPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {grpEntries.map((e) => (
-                <tr key={e.id} className={`hover:bg-slate-50 ${e.grade_class === 0 ? 'bg-amber-50/50' : ''}`}>
-                  <td className="px-4 py-3 text-sm text-slate-900">
-                    {e.grade_class === 0 && <span className="text-xs bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded mr-1">ПКШ</span>}
-                    {e.group_name}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.children_count}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.grade_class === 0 ? 'ПКШ' : `${e.grade_class} кл.`}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.lessons_count}</td>
-                  <td className="px-4 py-3 text-sm text-slate-700">{e.hours}</td>
-                  <td className="px-4 py-3 text-sm text-slate-500">{e.lesson_dates}</td>
+                <tr key={e.id} className={`hover:bg-slate-50 ${e.grade_class === 0 ? 'bg-amber-50/30' : ''}`}>
+                  {isDraft ? (
+                    <>
+                      <td className="px-4 py-1.5"><input type="text" defaultValue={e.group_name} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400" onBlur={(ev) => api.patch(`/group-lesson-entries/${e.id}/`, { group_name: ev.target.value }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="number" min="0" defaultValue={e.children_count} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400" onBlur={(ev) => api.patch(`/group-lesson-entries/${e.id}/`, { children_count: parseInt(ev.target.value) || 0 }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="text" defaultValue={e.grade_class === 0 ? 'ПКШ' : String(e.grade_class)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400" onBlur={(ev) => { const v = ev.target.value; api.patch(`/group-lesson-entries/${e.id}/`, { grade_class: v === 'ПКШ' || v === 'пкш' ? 0 : parseInt(v) || 0 }).then(() => fetchSheet()) }} /></td>
+                      <td className="px-4 py-1.5"><input type="number" min="0" defaultValue={e.lessons_count} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400" onBlur={(ev) => api.patch(`/group-lesson-entries/${e.id}/`, { lessons_count: parseInt(ev.target.value) || 0 }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="number" step="0.01" min="0" defaultValue={e.hours} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400" onBlur={(ev) => api.patch(`/group-lesson-entries/${e.id}/`, { hours: parseFloat(ev.target.value) || 0 }).then(() => fetchSheet())} /></td>
+                      <td className="px-4 py-1.5"><input type="date" defaultValue={e.lesson_dates} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-transparent focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 [color-scheme:light]" onBlur={(ev) => api.patch(`/group-lesson-entries/${e.id}/`, { lesson_dates: ev.target.value }).then(() => fetchSheet())} /></td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-4 py-3 text-sm text-slate-900">{e.grade_class === 0 && <span className="text-[10px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded mr-1">ПКШ</span>}{e.group_name}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{e.children_count}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{e.grade_class === 0 ? 'ПКШ' : `${e.grade_class} кл.`}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{e.lessons_count}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{e.hours}</td>
+                      <td className="px-4 py-3 text-sm text-slate-500">{e.lesson_dates}</td>
+                    </>
+                  )}
                   {isDraft && <td className="px-4 py-3 text-right"><button onClick={() => handleDeleteGrp(e.id)} className="text-xs text-red-500 hover:text-red-700">✕</button></td>}
                 </tr>
               ))}
@@ -404,8 +425,11 @@ export default function PayrollSheetDetailPage() {
           {advAmount > 0 && (
             <div className="flex justify-between py-1.5"><span className="text-sm font-medium text-amber-600">Запрошенный аванс:</span><span className="text-sm font-bold text-amber-600">{fmt(advAmount)}</span></div>
           )}
+          {advAmount > 0 && (
+            <div className="flex justify-between py-1.5"><span className="text-sm text-amber-600">Аванс (вычитается из к выдаче):</span><span className="text-sm font-bold text-amber-600">−{fmt(advAmount)}</span></div>
+          )}
           <div className="bg-indigo-50 rounded-xl px-4 py-3 -mx-1 mt-2">
-            <div className="flex justify-between"><span className="text-sm font-semibold text-indigo-900">К выдаче (основные):</span><span className="text-lg font-bold text-indigo-700">{fmt(totalBasic)}</span></div>
+            <div className="flex justify-between"><span className="text-sm font-semibold text-indigo-900">К выдаче:</span><span className="text-lg font-bold text-indigo-700">{fmt(totalBasic - advAmount)}</span></div>
           </div>
         </div>
       </div>
@@ -446,8 +470,8 @@ export default function PayrollSheetDetailPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-lg font-semibold text-slate-900 mb-2">{showAdvModal === 'request' ? 'Запросить аванс' : 'Выплатить аванс'}</h3>
-            <p className="text-sm text-slate-500 mb-4">{showAdvModal === 'request' ? 'Аванс будет добавлен к сумме выдачи после одобрения.' : `Максимум к погашению: ${fmt(advDebt)}. Сумма не может превышать ваш текущий заработок.`}</p>
-            <input type="number" step="0.01" min="0.01" max={showAdvModal === 'repay' ? advDebt : undefined} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm mb-4" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} autoFocus />
+            <p className="text-sm text-slate-500 mb-4">{showAdvModal === 'request' ? `Максимум: ${fmt(totalBasic)} (заработок по данному РЛ). Аванс будет вычтен из суммы к выдаче.` : `Максимум к погашению: ${fmt(advDebt)}.`}</p>
+            <input type="number" step="0.01" min="0.01" max={showAdvModal === 'request' ? totalBasic : advDebt} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm mb-4" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} autoFocus />
             <div className="flex gap-2">
               <button onClick={handleAdvance} disabled={!advanceAmount || parseFloat(advanceAmount) <= 0} className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition ${showAdvModal === 'request' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'}`}>{showAdvModal === 'request' ? 'Запросить' : 'Выплатить'}</button>
               <button onClick={() => { setShowAdvModal(null); setAdvanceAmount('') }} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">Отмена</button>

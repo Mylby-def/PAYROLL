@@ -14,13 +14,16 @@ import FinancePage from './pages/FinancePage'
 import CitiesPage from './pages/CitiesPage'
 import TransactionsPage from './pages/TransactionsPage'
 import UserProfilesPage from './pages/UserProfilesPage'
+import BranchesPage from './pages/BranchesPage'
+import SettingsPage from './pages/SettingsPage'
+import ActivityLogPage from './pages/ActivityLogPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />
 }
 
-function App() {
+export default function App() {
   return (
     <Router>
       <Routes>
@@ -37,11 +40,12 @@ function App() {
           <Route path="finance" element={<FinancePage />} />
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="profiles" element={<UserProfilesPage />} />
+          <Route path="branches" element={<BranchesPage />} />
           <Route path="cities" element={<CitiesPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="activity" element={<ActivityLogPage />} />
         </Route>
       </Routes>
     </Router>
   )
 }
-
-export default App
