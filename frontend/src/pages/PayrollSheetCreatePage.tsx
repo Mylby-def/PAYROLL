@@ -5,6 +5,8 @@ import api from '../api/client'
 interface Teacher {
   id: number
   full_name: string
+  subject_ids: number[]
+  subject_names: string[]
 }
 
 interface Subject {
@@ -35,6 +37,16 @@ export default function PayrollSheetCreatePage() {
       })
       .catch(() => {})
   }, [])
+
+  const handleTeacherChange = (id: string) => {
+    setTeacherId(id)
+    if (id) {
+      const teacher = teachers.find((t) => t.id === Number(id))
+      if (teacher && teacher.subject_ids && teacher.subject_ids.length > 0) {
+        setSelectedSubjectIds(teacher.subject_ids)
+      }
+    }
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -69,13 +81,15 @@ export default function PayrollSheetCreatePage() {
     )
   }
 
+  const selectedTeacher = teachers.find((t) => t.id === Number(teacherId))
+
   return (
     <div className="px-4 py-6 sm:px-0">
       <Link
         to="/payroll-sheets"
         className="text-indigo-600 hover:text-indigo-900 mb-4 inline-block"
       >
-        ← Назад к списку
+        &larr; Назад к списку
       </Link>
       <div className="max-w-lg">
         <h1 className="text-3xl font-bold text-gray-900 mb-6">Новый расчётный лист</h1>
@@ -86,14 +100,12 @@ export default function PayrollSheetCreatePage() {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Педагог (ФИО)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Педагог (ФИО)</label>
             <select
               required
               className="block w-full rounded-md border border-gray-300 shadow-sm px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               value={teacherId}
-              onChange={(e) => setTeacherId(e.target.value)}
+              onChange={(e) => handleTeacherChange(e.target.value)}
             >
               <option value="">Выберите педагога...</option>
               {teachers.map((t) => (
@@ -103,6 +115,18 @@ export default function PayrollSheetCreatePage() {
               ))}
             </select>
           </div>
+
+          {selectedTeacher && (
+            <div className="bg-gray-50 border border-gray-200 rounded-md px-4 py-3 text-sm">
+              <p className="font-medium text-gray-700">Сотрудник: {selectedTeacher.full_name}</p>
+              {selectedTeacher.subject_names && selectedTeacher.subject_names.length > 0 && (
+                <p className="text-gray-500 mt-1">
+                  Предметы из профиля: {selectedTeacher.subject_names.join(', ')}
+                </p>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Период с</label>
             <div className="flex gap-2 items-center">
@@ -143,7 +167,7 @@ export default function PayrollSheetCreatePage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Предметы, по которым запрашивается оплата
+              Предметы
             </label>
             <div className="border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
               {subjects.length === 0 ? (

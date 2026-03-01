@@ -1,7 +1,9 @@
 from django.contrib import admin
 from .models import (
     Teacher, Subject, Rate, Bonus,
-    PayrollSheet, PayrollEntry
+    PayrollSheet, PayrollEntry,
+    IndividualPrice, GroupPrice, PkshPrice,
+    IndividualLessonEntry, GroupLessonEntry, Advance
 )
 
 
@@ -10,12 +12,34 @@ class TeacherAdmin(admin.ModelAdmin):
     list_display = ['full_name', 'is_active', 'created_at']
     list_filter = ['is_active', 'created_at']
     search_fields = ['full_name']
+    filter_horizontal = ['subjects']
 
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
     list_display = ['name', 'created_at']
     search_fields = ['name']
+
+
+@admin.register(IndividualPrice)
+class IndividualPriceAdmin(admin.ModelAdmin):
+    list_display = ['basic_rate', 'premium_rate', 'vacation_rate', 'effective_from', 'effective_to']
+    list_filter = ['effective_from']
+    date_hierarchy = 'effective_from'
+
+
+@admin.register(GroupPrice)
+class GroupPriceAdmin(admin.ModelAdmin):
+    list_display = ['class_from', 'class_to', 'basic_rate', 'premium_rate', 'vacation_rate', 'effective_from', 'effective_to']
+    list_filter = ['effective_from', 'class_from']
+    date_hierarchy = 'effective_from'
+
+
+@admin.register(PkshPrice)
+class PkshPriceAdmin(admin.ModelAdmin):
+    list_display = ['basic_rate', 'premium_rate', 'vacation_rate', 'effective_from', 'effective_to']
+    list_filter = ['effective_from']
+    date_hierarchy = 'effective_from'
 
 
 @admin.register(Rate)
@@ -34,6 +58,16 @@ class BonusAdmin(admin.ModelAdmin):
     date_hierarchy = 'period_start'
 
 
+class IndividualLessonEntryInline(admin.TabularInline):
+    model = IndividualLessonEntry
+    extra = 0
+
+
+class GroupLessonEntryInline(admin.TabularInline):
+    model = GroupLessonEntry
+    extra = 0
+
+
 class PayrollEntryInline(admin.TabularInline):
     model = PayrollEntry
     extra = 0
@@ -48,7 +82,7 @@ class PayrollSheetAdmin(admin.ModelAdmin):
     search_fields = ['title', 'teacher__full_name']
     date_hierarchy = 'period_start'
     filter_horizontal = ['subjects']
-    inlines = [PayrollEntryInline]
+    inlines = [IndividualLessonEntryInline, GroupLessonEntryInline, PayrollEntryInline]
     readonly_fields = ['created_at', 'updated_at']
 
 
@@ -59,3 +93,11 @@ class PayrollEntryAdmin(admin.ModelAdmin):
     search_fields = ['teacher__full_name', 'subject__name']
     date_hierarchy = 'date'
     autocomplete_fields = ['teacher', 'subject', 'payroll_sheet']
+
+
+@admin.register(Advance)
+class AdvanceAdmin(admin.ModelAdmin):
+    list_display = ['teacher', 'advance_type', 'amount', 'date', 'created_at']
+    list_filter = ['advance_type', 'date']
+    search_fields = ['teacher__full_name']
+    date_hierarchy = 'date'

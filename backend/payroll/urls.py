@@ -4,6 +4,8 @@ from .views import (
     TeacherViewSet, SubjectViewSet,
     RateViewSet, BonusViewSet,
     PayrollSheetViewSet, PayrollEntryViewSet,
+    IndividualPriceViewSet, GroupPriceViewSet, PkshPriceViewSet,
+    IndividualLessonEntryViewSet, GroupLessonEntryViewSet, AdvanceViewSet,
     csrf_cookie_view, login_view, logout_view, user_view
 )
 
@@ -14,6 +16,12 @@ router.register(r'rates', RateViewSet)
 router.register(r'bonuses', BonusViewSet)
 router.register(r'payroll-sheets', PayrollSheetViewSet, basename='payrollsheet')
 router.register(r'payroll-entries', PayrollEntryViewSet)
+router.register(r'individual-prices', IndividualPriceViewSet)
+router.register(r'group-prices', GroupPriceViewSet)
+router.register(r'pksh-prices', PkshPriceViewSet)
+router.register(r'individual-lesson-entries', IndividualLessonEntryViewSet)
+router.register(r'group-lesson-entries', GroupLessonEntryViewSet)
+router.register(r'advances', AdvanceViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
