@@ -118,7 +118,7 @@ export default function PayrollSheetDetailPage() {
     try {
       const [indRes, grpRes, pkshRes] = await Promise.all([
         api.get('/individual-prices/', { params: { date: periodStart } }),
-        api.get('/group-prices/'),
+        api.get('/group-prices/', { params: { date: periodStart } }),
         api.get('/pksh-prices/', { params: { date: periodStart } }),
       ])
       const indList = indRes.data.results || indRes.data

@@ -40,12 +40,8 @@ export default function PayrollSheetCreatePage() {
 
   const handleTeacherChange = (id: string) => {
     setTeacherId(id)
-    if (id) {
-      const teacher = teachers.find((t) => t.id === Number(id))
-      if (teacher && teacher.subject_ids && teacher.subject_ids.length > 0) {
-        setSelectedSubjectIds(teacher.subject_ids)
-      }
-    }
+    const teacher = id ? teachers.find((t) => t.id === Number(id)) : null
+    setSelectedSubjectIds(teacher?.subject_ids || [])
   }
 
   const handleSubmit = async (e: FormEvent) => {

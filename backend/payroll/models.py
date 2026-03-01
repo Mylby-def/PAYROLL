@@ -236,7 +236,46 @@ class PayrollSheet(models.Model):
     def get_total_amount(self):
         from django.db.models import Sum
         old_total = self.entries.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        return old_total
+        period_date = self.period_start
+
+        individual_price = IndividualPrice.objects.filter(
+            effective_from__lte=period_date
+        ).filter(
+            models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=period_date)
+        ).first()
+        individual_lessons = self.individual_entries.aggregate(total=Sum('lessons_count'))['total'] or 0
+        individual_total = (
+            Decimal(individual_lessons) * individual_price.basic_rate
+            if individual_price else Decimal('0.00')
+        )
+
+        pksh_price = PkshPrice.objects.filter(
+            effective_from__lte=period_date
+        ).filter(
+            models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=period_date)
+        ).first()
+        group_prices = list(
+            GroupPrice.objects.filter(
+                effective_from__lte=period_date
+            ).filter(
+                models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=period_date)
+            )
+        )
+        group_total = Decimal('0.00')
+        for entry in self.group_entries.all():
+            if entry.is_pksh:
+                rate = pksh_price.basic_rate if pksh_price else Decimal('0.00')
+            else:
+                rate = next(
+                    (
+                        p.basic_rate for p in group_prices
+                        if p.class_from <= entry.grade_class <= p.class_to
+                    ),
+                    Decimal('0.00')
+                )
+            group_total += Decimal(entry.children_count) * Decimal(entry.lessons_count) * rate
+
+        return old_total + individual_total + group_total
 
 
 class PayrollEntry(models.Model):
