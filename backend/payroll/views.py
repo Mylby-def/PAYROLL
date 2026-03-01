@@ -14,7 +14,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 from .models import (
-    City, UserProfile, Teacher, Subject,
+    City, UserProfile, Teacher, Subject, ROLE_CHOICES,
     IndividualPrice, GroupPrice, PkshPrice,
     Rate, Bonus, PayrollSheet, PayrollEntry,
     IndividualLessonEntry, GroupLessonEntry, Advance, Transaction
@@ -27,7 +27,9 @@ from .serializers import (
     IndividualLessonEntrySerializer, GroupLessonEntrySerializer,
     AdvanceSerializer, TransactionSerializer, UserListSerializer
 )
-from .permissions import get_role, CanManagePrices, CanApproveSheets, CanDisburse, MANAGE_ROLES, DISBURSE_ROLES
+from .permissions import get_role, CanManagePrices, MANAGE_ROLES, DISBURSE_ROLES
+
+PROFILE_ROLES = ('senior_admin', 'chief_admin', 'moderator')
 
 
 # ── Auth ──────────────────────────────────────────────────────
@@ -159,8 +161,6 @@ class PkshPriceViewSet(viewsets.ModelViewSet):
         return _check_price_gaps(PkshPrice)
 
 
-# ── Legacy ────────────────────────────────────────────────────
-
 class RateViewSet(viewsets.ModelViewSet):
     queryset = Rate.objects.all()
     serializer_class = RateSerializer
@@ -253,11 +253,9 @@ class AdvanceViewSet(viewsets.ModelViewSet):
         adv.save()
         if adv.advance_type == 'request' and adv.teacher and adv.teacher.user:
             Transaction.objects.create(
-                user=adv.teacher.user,
-                transaction_type='advance_given',
-                amount=adv.amount,
-                description=f'Аванс одобрен',
-                created_by=request.user,
+                user=adv.teacher.user, transaction_type='advance_given',
+                balance_type='main', amount=adv.amount,
+                description='Аванс одобрен', created_by=request.user,
             )
         return Response(AdvanceSerializer(adv).data)
 
@@ -281,9 +279,9 @@ class AdvanceViewSet(viewsets.ModelViewSet):
         return Response({'teacher_id': int(teacher_id), 'debt': str(Advance.get_teacher_debt(int(teacher_id)))})
 
 
-# ── Transactions / Balance ────────────────────────────────────
+# ── Transactions ──────────────────────────────────────────────
 
-class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
+class TransactionViewSet(viewsets.ModelViewSet):
     queryset = Transaction.objects.all()
     serializer_class = TransactionSerializer
     permission_classes = [IsAuthenticated]
@@ -296,8 +294,28 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(user_id=user_id)
         elif role == 'teacher':
             qs = qs.filter(user=self.request.user)
+        elif role == 'senior_admin':
+            try:
+                city_id = self.request.user.profile.city_id
+                if city_id:
+                    qs = qs.filter(user__profile__city_id=city_id)
+            except:
+                pass
         return qs
 
+    def create(self, request, *args, **kwargs):
+        role = get_role(request.user)
+        if role not in DISBURSE_ROLES:
+            return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+        data = request.data.copy()
+        data['created_by'] = request.user.id
+        s = TransactionSerializer(data=data)
+        s.is_valid(raise_exception=True)
+        s.save()
+        return Response(s.data, status=status.HTTP_201_CREATED)
+
+
+# ── Finance ──────────────────────────────────────────────────
 
 @api_view(['POST'])
 @perm_classes([IsAuthenticated])
@@ -307,6 +325,7 @@ def disburse_funds(request):
         return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
     user_id = request.data.get('user_id')
     amount = request.data.get('amount')
+    balance_type = request.data.get('balance_type', 'main')
     description = request.data.get('description', 'Выдача средств')
     if not user_id or not amount:
         return Response({'detail': 'user_id и amount обязательны'}, status=status.HTTP_400_BAD_REQUEST)
@@ -314,27 +333,17 @@ def disburse_funds(request):
     if amount <= 0:
         return Response({'detail': 'Сумма должна быть больше 0'}, status=status.HTTP_400_BAD_REQUEST)
     target_user = User.objects.get(id=user_id)
-    balance = Transaction.get_balance(user_id)
+    balance = Transaction.get_balance(user_id, balance_type)
     if amount > balance:
-        return Response({'detail': f'Недостаточно средств на счету ({balance}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': f'Недостаточно средств ({balance}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+    _check_city_access(request.user, target_user, role)
 
-    if role == 'senior_admin':
-        try:
-            my_city = request.user.profile.city_id
-            target_city = target_user.profile.city_id
-            if my_city and target_city and my_city != target_city:
-                return Response({'detail': 'Вы можете выдавать средства только пользователям вашего города'}, status=status.HTTP_403_FORBIDDEN)
-        except UserProfile.DoesNotExist:
-            pass
-
+    t_type = {'main': 'disbursement', 'premium': 'premium_disbursement', 'vacation': 'vacation_disbursement'}[balance_type]
     Transaction.objects.create(
-        user=target_user,
-        transaction_type='disbursement',
-        amount=-amount,
-        description=description,
-        created_by=request.user,
+        user=target_user, transaction_type=t_type, balance_type=balance_type,
+        amount=-amount, description=description, created_by=request.user,
     )
-    return Response({'balance': str(Transaction.get_balance(user_id))})
+    return Response(Transaction.get_all_balances(user_id))
 
 
 @api_view(['POST'])
@@ -345,6 +354,7 @@ def add_extra_funds(request):
         return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
     user_id = request.data.get('user_id')
     amount = request.data.get('amount')
+    balance_type = request.data.get('balance_type', 'main')
     description = request.data.get('description', 'Дополнительное начисление')
     if not user_id or not amount:
         return Response({'detail': 'user_id и amount обязательны'}, status=status.HTTP_400_BAD_REQUEST)
@@ -352,24 +362,26 @@ def add_extra_funds(request):
     if amount <= 0:
         return Response({'detail': 'Сумма должна быть больше 0'}, status=status.HTTP_400_BAD_REQUEST)
     target_user = User.objects.get(id=user_id)
+    _check_city_access(request.user, target_user, role)
 
+    t_type = {'main': 'extra_credit', 'premium': 'extra_premium', 'vacation': 'extra_vacation'}[balance_type]
+    Transaction.objects.create(
+        user=target_user, transaction_type=t_type, balance_type=balance_type,
+        amount=amount, description=description, created_by=request.user,
+    )
+    return Response(Transaction.get_all_balances(user_id))
+
+
+def _check_city_access(requesting_user, target_user, role):
     if role == 'senior_admin':
         try:
-            my_city = request.user.profile.city_id
+            my_city = requesting_user.profile.city_id
             target_city = target_user.profile.city_id
             if my_city and target_city and my_city != target_city:
-                return Response({'detail': 'Нет прав для этого города'}, status=status.HTTP_403_FORBIDDEN)
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied('Нет прав для этого города')
         except UserProfile.DoesNotExist:
             pass
-
-    Transaction.objects.create(
-        user=target_user,
-        transaction_type='extra_credit',
-        amount=amount,
-        description=description,
-        created_by=request.user,
-    )
-    return Response({'balance': str(Transaction.get_balance(user_id))})
 
 
 @api_view(['GET'])
@@ -378,18 +390,99 @@ def users_list(request):
     role = get_role(request.user)
     if role not in (*MANAGE_ROLES, *DISBURSE_ROLES):
         return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
-
     qs = User.objects.select_related('profile', 'teacher_profile').filter(is_active=True)
-
     if role == 'senior_admin':
         try:
             city_id = request.user.profile.city_id
             if city_id:
                 qs = qs.filter(profile__city_id=city_id)
-        except UserProfile.DoesNotExist:
+        except:
+            pass
+    return Response(UserListSerializer(qs, many=True).data)
+
+
+# ── User Profile Management ──────────────────────────────────
+
+@api_view(['GET'])
+@perm_classes([IsAuthenticated])
+def user_profiles_list(request):
+    role = get_role(request.user)
+    if role not in PROFILE_ROLES:
+        return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+    qs = User.objects.select_related('profile', 'teacher_profile').filter(is_active=True)
+    if role == 'senior_admin':
+        try:
+            city_id = request.user.profile.city_id
+            if city_id:
+                qs = qs.filter(profile__city_id=city_id)
+        except:
+            pass
+    return Response(UserListSerializer(qs, many=True).data)
+
+
+@api_view(['POST'])
+@perm_classes([IsAuthenticated])
+def create_user_profile(request):
+    role = get_role(request.user)
+    if role not in PROFILE_ROLES:
+        return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+
+    username = request.data.get('username')
+    password = request.data.get('password')
+    full_name = request.data.get('full_name', '')
+    target_role = request.data.get('role', 'teacher')
+    city_id = request.data.get('city_id')
+
+    if role == 'senior_admin' and target_role not in ('teacher', 'administrator'):
+        return Response({'detail': 'Вы можете создавать только педагогов и администраторов'}, status=status.HTTP_403_FORBIDDEN)
+
+    if not username or not password:
+        return Response({'detail': 'username и password обязательны'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(username=username).exists():
+        return Response({'detail': 'Пользователь с таким логином уже существует'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.create_user(username=username, password=password, first_name=full_name)
+    UserProfile.objects.create(user=user, role=target_role, city_id=city_id)
+
+    if target_role == 'teacher':
+        Teacher.objects.create(user=user, full_name=full_name)
+
+    return Response(UserListSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+@perm_classes([IsAuthenticated])
+def update_user_profile(request, user_id):
+    role = get_role(request.user)
+    if role not in PROFILE_ROLES:
+        return Response({'detail': 'Нет прав'}, status=status.HTTP_403_FORBIDDEN)
+
+    target_user = User.objects.get(id=user_id)
+    new_role = request.data.get('role')
+    city_id = request.data.get('city_id')
+    is_active = request.data.get('is_active')
+
+    if role == 'senior_admin':
+        try:
+            target_role = target_user.profile.role
+            if target_role not in ('teacher', 'administrator'):
+                return Response({'detail': 'Нет прав для этой роли'}, status=status.HTTP_403_FORBIDDEN)
+        except:
             pass
 
-    return Response(UserListSerializer(qs, many=True).data)
+    profile, _ = UserProfile.objects.get_or_create(user=target_user)
+    if new_role:
+        profile.role = new_role
+    if city_id is not None:
+        profile.city_id = city_id if city_id else None
+    profile.save()
+
+    if is_active is not None:
+        target_user.is_active = is_active
+        target_user.save()
+
+    return Response(UserListSerializer(target_user).data)
 
 
 # ── PayrollSheet ──────────────────────────────────────────────
@@ -426,9 +519,16 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
             title = f"РЛ: {teacher.full_name} ({period_start} — {period_end})"
         serializer.save(created_by=self.request.user, title=title or 'Без названия')
 
+    def update(self, request, *args, **kwargs):
+        sheet = self.get_object()
+        role = get_role(request.user)
+        if role == 'teacher' and sheet.status not in ('draft', 'rejected'):
+            return Response({'detail': 'Нельзя редактировать отправленный или одобренный лист'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
         sheet = self.get_object()
-        if sheet.status != 'draft':
+        if sheet.status not in ('draft',):
             return Response({'detail': 'Удалять можно только черновики'}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
 
@@ -439,14 +539,10 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Можно отправить только черновик или отклонённый лист'}, status=status.HTTP_400_BAD_REQUEST)
         sheet.status = 'submitted'
         sheet.rejection_comment = ''
-        total_basic = Decimal(str(request.data.get('total_basic', sheet.total_basic)))
-        total_premium = Decimal(str(request.data.get('total_premium', sheet.total_premium)))
-        total_vacation = Decimal(str(request.data.get('total_vacation', sheet.total_vacation)))
-        advance_amount = Decimal(str(request.data.get('advance_amount', sheet.advance_amount)))
-        sheet.total_basic = total_basic
-        sheet.total_premium = total_premium
-        sheet.total_vacation = total_vacation
-        sheet.advance_amount = advance_amount
+        sheet.total_basic = Decimal(str(request.data.get('total_basic', sheet.total_basic)))
+        sheet.total_premium = Decimal(str(request.data.get('total_premium', sheet.total_premium)))
+        sheet.total_vacation = Decimal(str(request.data.get('total_vacation', sheet.total_vacation)))
+        sheet.advance_amount = Decimal(str(request.data.get('advance_amount', sheet.advance_amount)))
         sheet.save()
         return Response({'status': 'submitted'})
 
@@ -462,35 +558,40 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         sheet.save()
 
         if sheet.teacher and sheet.teacher.user:
-            total_credit = sheet.total_basic
-            if total_credit > 0:
+            if sheet.total_basic > 0:
                 Transaction.objects.create(
-                    user=sheet.teacher.user,
-                    transaction_type='payroll_credit',
-                    amount=total_credit,
+                    user=sheet.teacher.user, transaction_type='payroll_credit',
+                    balance_type='main', amount=sheet.total_basic,
                     description=f'Ведомость #{sheet.id} одобрена',
-                    payroll_sheet=sheet,
-                    created_by=request.user,
+                    payroll_sheet=sheet, created_by=request.user,
+                )
+            if sheet.total_premium > 0:
+                Transaction.objects.create(
+                    user=sheet.teacher.user, transaction_type='premium_credit',
+                    balance_type='premium', amount=sheet.total_premium,
+                    description=f'Премиальные по ведомости #{sheet.id}',
+                    payroll_sheet=sheet, created_by=request.user,
+                )
+            if sheet.total_vacation > 0:
+                Transaction.objects.create(
+                    user=sheet.teacher.user, transaction_type='vacation_credit',
+                    balance_type='vacation', amount=sheet.total_vacation,
+                    description=f'Отпускные по ведомости #{sheet.id}',
+                    payroll_sheet=sheet, created_by=request.user,
                 )
 
         if sheet.advance_amount > 0 and sheet.teacher:
-            adv = Advance.objects.create(
-                teacher=sheet.teacher,
-                advance_type='request',
-                status='approved',
-                amount=sheet.advance_amount,
-                payroll_sheet=sheet,
-                description='Аванс по ведомости (одобрен)',
-                date=date.today(),
+            Advance.objects.create(
+                teacher=sheet.teacher, advance_type='request', status='approved',
+                amount=sheet.advance_amount, payroll_sheet=sheet,
+                description='Аванс по ведомости (одобрен)', date=date.today(),
             )
             if sheet.teacher.user:
                 Transaction.objects.create(
-                    user=sheet.teacher.user,
-                    transaction_type='advance_given',
-                    amount=sheet.advance_amount,
+                    user=sheet.teacher.user, transaction_type='advance_given',
+                    balance_type='main', amount=sheet.advance_amount,
                     description=f'Аванс по ведомости #{sheet.id}',
-                    payroll_sheet=sheet,
-                    created_by=request.user,
+                    payroll_sheet=sheet, created_by=request.user,
                 )
 
         return Response({'status': 'approved'})
@@ -534,24 +635,21 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         amount = Decimal(str(amount))
         debt = Advance.get_teacher_debt(sheet.teacher_id)
         if amount > debt:
-            return Response({'detail': f'Сумма погашения не может превышать долг ({debt}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': f'Сумма не может превышать долг ({debt}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+        if sheet.teacher.user:
+            main_balance = Transaction.get_balance(sheet.teacher.user.id, 'main')
+            if amount > main_balance:
+                return Response({'detail': f'Недостаточно средств на основном счёте ({main_balance}₽)'}, status=status.HTTP_400_BAD_REQUEST)
+
         Advance.objects.create(
-            teacher=sheet.teacher,
-            advance_type='repayment',
-            status='approved',
-            amount=amount,
-            payroll_sheet=sheet,
-            description='Погашение аванса',
-            date=date.today(),
+            teacher=sheet.teacher, advance_type='repayment', status='approved',
+            amount=amount, payroll_sheet=sheet, description='Погашение аванса', date=date.today(),
         )
         if sheet.teacher.user:
             Transaction.objects.create(
-                user=sheet.teacher.user,
-                transaction_type='advance_repaid',
-                amount=-amount,
-                description=f'Погашение аванса по ведомости #{sheet.id}',
-                payroll_sheet=sheet,
-                created_by=request.user,
+                user=sheet.teacher.user, transaction_type='advance_repaid',
+                balance_type='main', amount=-amount,
+                description=f'Погашение аванса', payroll_sheet=sheet, created_by=request.user,
             )
         return Response({'debt': str(Advance.get_teacher_debt(sheet.teacher_id))})
 
@@ -561,20 +659,18 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Расчётный лист"
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(bold=True, color="FFFFFF", size=11)
-        title_font = Font(bold=True, size=14)
-        border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-
+        hf = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        hfn = Font(bold=True, color="FFFFFF", size=11)
+        tf = Font(bold=True, size=14)
+        bd = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
         ws.merge_cells('A1:F1')
         ws['A1'] = sheet.title
-        ws['A1'].font = title_font
+        ws['A1'].font = tf
         ws['A1'].alignment = Alignment(horizontal='center')
-        teacher_name = sheet.teacher.full_name if sheet.teacher else 'Не указан'
-        ws['A2'] = f"Сотрудник: {teacher_name}"
+        tn = sheet.teacher.full_name if sheet.teacher else 'Не указан'
+        ws['A2'] = f"Сотрудник: {tn}"
         ws['A3'] = f"Период: {sheet.period_start} — {sheet.period_end}"
         row = 5
-
         if sheet.individual_entries.exists():
             ws.merge_cells(f'A{row}:D{row}')
             ws[f'A{row}'] = 'Индивидуальные занятия'
@@ -582,19 +678,15 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
             ws[f'A{row}'].alignment = Alignment(horizontal='center')
             row += 1
             for col, h in enumerate(['ФИ ученика', 'Занятий', 'Часов', 'Даты'], 1):
-                cell = ws.cell(row=row, column=col, value=h)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.border = border
+                c = ws.cell(row=row, column=col, value=h); c.fill = hf; c.font = hfn; c.border = bd
             row += 1
             for e in sheet.individual_entries.all():
-                ws.cell(row=row, column=1, value=e.student_name).border = border
-                ws.cell(row=row, column=2, value=e.lessons_count).border = border
-                ws.cell(row=row, column=3, value=float(e.hours)).border = border
-                ws.cell(row=row, column=4, value=e.lesson_dates).border = border
+                ws.cell(row=row, column=1, value=e.student_name).border = bd
+                ws.cell(row=row, column=2, value=e.lessons_count).border = bd
+                ws.cell(row=row, column=3, value=float(e.hours)).border = bd
+                ws.cell(row=row, column=4, value=e.lesson_dates).border = bd
                 row += 1
             row += 1
-
         if sheet.group_entries.exists():
             ws.merge_cells(f'A{row}:F{row}')
             ws[f'A{row}'] = 'Групповые занятия'
@@ -602,23 +694,18 @@ class PayrollSheetViewSet(viewsets.ModelViewSet):
             ws[f'A{row}'].alignment = Alignment(horizontal='center')
             row += 1
             for col, h in enumerate(['Состав', 'Детей', 'Класс', 'Занятий', 'Часов', 'Даты'], 1):
-                cell = ws.cell(row=row, column=col, value=h)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.border = border
+                c = ws.cell(row=row, column=col, value=h); c.fill = hf; c.font = hfn; c.border = bd
             row += 1
             for e in sheet.group_entries.all():
-                ws.cell(row=row, column=1, value=e.group_name).border = border
-                ws.cell(row=row, column=2, value=e.children_count).border = border
-                ws.cell(row=row, column=3, value='ПКШ' if e.is_pksh else str(e.grade_class)).border = border
-                ws.cell(row=row, column=4, value=e.lessons_count).border = border
-                ws.cell(row=row, column=5, value=float(e.hours)).border = border
-                ws.cell(row=row, column=6, value=e.lesson_dates).border = border
+                ws.cell(row=row, column=1, value=e.group_name).border = bd
+                ws.cell(row=row, column=2, value=e.children_count).border = bd
+                ws.cell(row=row, column=3, value='ПКШ' if e.is_pksh else str(e.grade_class)).border = bd
+                ws.cell(row=row, column=4, value=e.lessons_count).border = bd
+                ws.cell(row=row, column=5, value=float(e.hours)).border = bd
+                ws.cell(row=row, column=6, value=e.lesson_dates).border = bd
                 row += 1
-
         for col, w in enumerate([30, 12, 10, 10, 10, 30], 1):
             ws.column_dimensions[get_column_letter(col)].width = w
-
         resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp['Content-Disposition'] = f'attachment; filename="payroll_{sheet.id}.xlsx"'
         wb.save(resp)

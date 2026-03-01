@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { useAuthStore } from '../store/authStore'
 import api from '../api/client'
 
 interface IndEntry { id: number; student_name: string; lessons_count: number; hours: string; lesson_dates: string }
@@ -28,6 +29,7 @@ const emptyGrp = (): DraftGrpRow => ({ group_name: '', children_count: '', grade
 export default function PayrollSheetDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useAuthStore()
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [loading, setLoading] = useState(true)
@@ -203,7 +205,9 @@ export default function PayrollSheetDetailPage() {
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-500">Загрузка...</div>
   if (!sheet) return <div className="text-center py-16 text-slate-400">Расчётный лист не найден</div>
 
-  const isDraft = sheet.status === 'draft' || sheet.status === 'rejected'
+  const isTeacher = user?.role === 'teacher'
+  const canEdit = sheet.status === 'draft' || sheet.status === 'rejected'
+  const isDraft = isTeacher ? canEdit : canEdit
 
   return (
     <div>
@@ -401,7 +405,7 @@ export default function PayrollSheetDetailPage() {
             <div className="flex justify-between py-1.5"><span className="text-sm font-medium text-amber-600">Запрошенный аванс:</span><span className="text-sm font-bold text-amber-600">{fmt(advAmount)}</span></div>
           )}
           <div className="bg-indigo-50 rounded-xl px-4 py-3 -mx-1 mt-2">
-            <div className="flex justify-between"><span className="text-sm font-semibold text-indigo-900">К выдаче:</span><span className="text-lg font-bold text-indigo-700">{fmt(Math.max(totalBasic - advDebt, 0))}</span></div>
+            <div className="flex justify-between"><span className="text-sm font-semibold text-indigo-900">К выдаче (основные):</span><span className="text-lg font-bold text-indigo-700">{fmt(totalBasic)}</span></div>
           </div>
         </div>
       </div>
@@ -442,7 +446,7 @@ export default function PayrollSheetDetailPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
             <h3 className="text-lg font-semibold text-slate-900 mb-2">{showAdvModal === 'request' ? 'Запросить аванс' : 'Выплатить аванс'}</h3>
-            <p className="text-sm text-slate-500 mb-4">{showAdvModal === 'request' ? 'Аванс будет добавлен к сумме выдачи после одобрения.' : `Максимум: ${fmt(advDebt)}`}</p>
+            <p className="text-sm text-slate-500 mb-4">{showAdvModal === 'request' ? 'Аванс будет добавлен к сумме выдачи после одобрения.' : `Максимум к погашению: ${fmt(advDebt)}. Сумма не может превышать ваш текущий заработок.`}</p>
             <input type="number" step="0.01" min="0.01" max={showAdvModal === 'repay' ? advDebt : undefined} className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm mb-4" value={advanceAmount} onChange={(e) => setAdvanceAmount(e.target.value)} autoFocus />
             <div className="flex gap-2">
               <button onClick={handleAdvance} disabled={!advanceAmount || parseFloat(advanceAmount) <= 0} className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition ${showAdvModal === 'request' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'}`}>{showAdvModal === 'request' ? 'Запросить' : 'Выплатить'}</button>

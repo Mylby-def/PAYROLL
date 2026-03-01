@@ -11,6 +11,8 @@ interface User {
   city?: string
   city_id?: number
   balance?: string
+  balance_premium?: string
+  balance_vacation?: string
   teacher_id?: number | null
 }
 
@@ -26,31 +28,25 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
-
   login: async (username: string, password: string) => {
     await api.get('/auth/csrf/')
-    const response = await api.post('/auth/login/', { username, password })
-    set({ user: response.data.user, isAuthenticated: true })
+    const r = await api.post('/auth/login/', { username, password })
+    set({ user: r.data.user, isAuthenticated: true })
   },
-
   logout: async () => {
     try { await api.post('/auth/logout/') } catch {}
     set({ user: null, isAuthenticated: false })
   },
-
   checkAuth: async () => {
     try {
-      const response = await api.get('/auth/user/')
-      set({ user: response.data, isAuthenticated: true })
-    } catch {
-      set({ user: null, isAuthenticated: false })
-    }
+      const r = await api.get('/auth/user/')
+      set({ user: r.data, isAuthenticated: true })
+    } catch { set({ user: null, isAuthenticated: false }) }
   },
-
   refreshUser: async () => {
     try {
-      const response = await api.get('/auth/user/')
-      set({ user: response.data })
+      const r = await api.get('/auth/user/')
+      set({ user: r.data })
     } catch {}
   },
 }))

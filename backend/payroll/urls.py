@@ -9,6 +9,7 @@ from .views import (
     AdvanceViewSet, TransactionViewSet,
     csrf_cookie_view, login_view, logout_view, user_view,
     disburse_funds, add_extra_funds, users_list,
+    user_profiles_list, create_user_profile, update_user_profile,
 )
 
 router = DefaultRouter()
@@ -36,4 +37,7 @@ urlpatterns = [
     path('finance/disburse/', disburse_funds, name='disburse'),
     path('finance/add-extra/', add_extra_funds, name='add_extra'),
     path('finance/users/', users_list, name='users_list'),
+    path('profiles/', user_profiles_list, name='profiles_list'),
+    path('profiles/create/', create_user_profile, name='profile_create'),
+    path('profiles/<int:user_id>/', update_user_profile, name='profile_update'),
 ]

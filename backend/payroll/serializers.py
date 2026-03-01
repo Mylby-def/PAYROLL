@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
-    City, UserProfile, Teacher, Subject,
+    City, UserProfile, Teacher, Subject, ROLE_CHOICES,
     IndividualPrice, GroupPrice, PkshPrice,
     Rate, Bonus, PayrollSheet, PayrollEntry,
     IndividualLessonEntry, GroupLessonEntry, Advance, Transaction
@@ -25,38 +25,39 @@ class UserSerializer(serializers.ModelSerializer):
     city = serializers.SerializerMethodField()
     city_id = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
+    balance_premium = serializers.SerializerMethodField()
+    balance_vacation = serializers.SerializerMethodField()
     teacher_id = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'city', 'city_id', 'balance', 'teacher_id']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name',
+                  'role', 'city', 'city_id', 'balance', 'balance_premium', 'balance_vacation', 'teacher_id']
 
     def get_role(self, obj):
-        try:
-            return obj.profile.role
-        except UserProfile.DoesNotExist:
-            return 'teacher'
+        try: return obj.profile.role
+        except: return 'teacher'
 
     def get_city(self, obj):
-        try:
-            return obj.profile.city.name if obj.profile.city else None
-        except UserProfile.DoesNotExist:
-            return None
+        try: return obj.profile.city.name if obj.profile.city else None
+        except: return None
 
     def get_city_id(self, obj):
-        try:
-            return obj.profile.city_id if obj.profile.city else None
-        except UserProfile.DoesNotExist:
-            return None
+        try: return obj.profile.city_id if obj.profile.city else None
+        except: return None
 
     def get_balance(self, obj):
-        return str(Transaction.get_balance(obj.id))
+        return str(Transaction.get_balance(obj.id, 'main'))
+
+    def get_balance_premium(self, obj):
+        return str(Transaction.get_balance(obj.id, 'premium'))
+
+    def get_balance_vacation(self, obj):
+        return str(Transaction.get_balance(obj.id, 'vacation'))
 
     def get_teacher_id(self, obj):
-        try:
-            return obj.teacher_profile.id
-        except Exception:
-            return None
+        try: return obj.teacher_profile.id
+        except: return None
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -86,20 +87,10 @@ class TeacherSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         city_id = validated_data.pop('city_id', None)
         subjects = validated_data.pop('subjects', [])
-
         user = None
         if username and password:
-            user = User.objects.create_user(
-                username=username,
-                password=password,
-                first_name=validated_data.get('full_name', '')
-            )
-            UserProfile.objects.create(
-                user=user,
-                role='teacher',
-                city_id=city_id
-            )
-
+            user = User.objects.create_user(username=username, password=password, first_name=validated_data.get('full_name', ''))
+            UserProfile.objects.create(user=user, role='teacher', city_id=city_id)
         teacher = Teacher.objects.create(user=user, **validated_data)
         if subjects:
             teacher.subjects.set(subjects)
@@ -138,7 +129,6 @@ class PkshPriceSerializer(serializers.ModelSerializer):
 
 class RateSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source='subject.name', read_only=True)
-
     class Meta:
         model = Rate
         fields = '__all__'
@@ -146,7 +136,6 @@ class RateSerializer(serializers.ModelSerializer):
 
 class BonusSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
-
     class Meta:
         model = Bonus
         fields = '__all__'
@@ -160,7 +149,6 @@ class IndividualLessonEntrySerializer(serializers.ModelSerializer):
 
 class GroupLessonEntrySerializer(serializers.ModelSerializer):
     is_pksh = serializers.BooleanField(read_only=True)
-
     class Meta:
         model = GroupLessonEntry
         fields = ['id', 'payroll_sheet', 'group_name', 'children_count', 'grade_class',
@@ -169,28 +157,35 @@ class GroupLessonEntrySerializer(serializers.ModelSerializer):
 
 class AdvanceSerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
-
     class Meta:
         model = Advance
         fields = '__all__'
 
 
 class TransactionSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.username', read_only=True)
+    user_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    user_city = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
         fields = '__all__'
 
+    def get_user_name(self, obj):
+        try: return obj.user.teacher_profile.full_name
+        except: return obj.user.get_full_name() or obj.user.username
+
     def get_created_by_name(self, obj):
         return obj.created_by.username if obj.created_by else None
+
+    def get_user_city(self, obj):
+        try: return obj.user.profile.city.name if obj.user.profile.city else None
+        except: return None
 
 
 class PayrollEntrySerializer(serializers.ModelSerializer):
     teacher_name = serializers.CharField(source='teacher.full_name', read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
-
     class Meta:
         model = PayrollEntry
         fields = '__all__'
@@ -249,7 +244,7 @@ class PayrollSheetListSerializer(serializers.ModelSerializer):
     class Meta:
         model = PayrollSheet
         fields = ['id', 'title', 'teacher', 'teacher_name', 'period_start', 'period_end',
-                  'status', 'total_basic', 'total_premium', 'total_vacation', 'advance_amount',
+                  'status', 'rejection_comment', 'total_basic', 'total_premium', 'total_vacation', 'advance_amount',
                   'entries_count', 'created_by_name', 'created_at', 'updated_at']
 
     def get_entries_count(self, obj):
@@ -265,30 +260,38 @@ class PayrollSheetListSerializer(serializers.ModelSerializer):
 class UserListSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     city_name = serializers.SerializerMethodField()
+    city_id = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
+    balance_premium = serializers.SerializerMethodField()
+    balance_vacation = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'full_name', 'role', 'city_name', 'balance']
+        fields = ['id', 'username', 'full_name', 'role', 'city_name', 'city_id',
+                  'balance', 'balance_premium', 'balance_vacation', 'is_active']
 
     def get_role(self, obj):
-        try:
-            return obj.profile.role
-        except UserProfile.DoesNotExist:
-            return None
+        try: return obj.profile.role
+        except: return None
 
     def get_city_name(self, obj):
-        try:
-            return obj.profile.city.name if obj.profile.city else None
-        except UserProfile.DoesNotExist:
-            return None
+        try: return obj.profile.city.name if obj.profile.city else None
+        except: return None
+
+    def get_city_id(self, obj):
+        try: return obj.profile.city_id
+        except: return None
 
     def get_balance(self, obj):
-        return str(Transaction.get_balance(obj.id))
+        return str(Transaction.get_balance(obj.id, 'main'))
+
+    def get_balance_premium(self, obj):
+        return str(Transaction.get_balance(obj.id, 'premium'))
+
+    def get_balance_vacation(self, obj):
+        return str(Transaction.get_balance(obj.id, 'vacation'))
 
     def get_full_name(self, obj):
-        try:
-            return obj.teacher_profile.full_name
-        except Exception:
-            return obj.get_full_name() or obj.username
+        try: return obj.teacher_profile.full_name
+        except: return obj.get_full_name() or obj.username

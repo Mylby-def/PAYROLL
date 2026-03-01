@@ -182,10 +182,10 @@ class PayrollSheet(models.Model):
     rejection_comment = models.TextField(blank=True, verbose_name="Причина отклонения")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_payroll_sheets')
     notes = models.TextField(blank=True)
-    total_basic = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), verbose_name="Основные")
-    total_premium = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), verbose_name="Премиальные")
-    total_vacation = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), verbose_name="Отпускные")
-    advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), verbose_name="Сумма аванса")
+    total_basic = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    total_premium = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    total_vacation = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    advance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -310,14 +310,28 @@ class Advance(models.Model):
 class Transaction(models.Model):
     TYPE_CHOICES = [
         ('payroll_credit', 'Начисление по ведомости'),
+        ('premium_credit', 'Начисление премиальных'),
+        ('vacation_credit', 'Начисление отпускных'),
         ('disbursement', 'Выдача средств'),
+        ('premium_disbursement', 'Выдача премиальных'),
+        ('vacation_disbursement', 'Выдача отпускных'),
         ('extra_credit', 'Дополнительное начисление'),
+        ('extra_premium', 'Дополнительные премиальные'),
+        ('extra_vacation', 'Дополнительные отпускные'),
         ('advance_given', 'Аванс выдан'),
         ('advance_repaid', 'Аванс погашен'),
+        ('expense', 'Расход'),
+        ('income', 'Доход'),
+    ]
+    BALANCE_TYPE_CHOICES = [
+        ('main', 'Основной'),
+        ('premium', 'Премиальные'),
+        ('vacation', 'Отпускные'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
     transaction_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    balance_type = models.CharField(max_length=20, choices=BALANCE_TYPE_CHOICES, default='main')
     amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Сумма")
     description = models.TextField(blank=True)
     payroll_sheet = models.ForeignKey(PayrollSheet, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
@@ -333,8 +347,16 @@ class Transaction(models.Model):
         return f"{self.user.username} — {self.get_transaction_type_display()} {self.amount}₽"
 
     @staticmethod
-    def get_balance(user_id):
+    def get_balance(user_id, balance_type='main'):
         from django.db.models import Sum
-        return Transaction.objects.filter(user_id=user_id).aggregate(
-            t=Sum('amount')
-        )['t'] or Decimal('0.00')
+        return Transaction.objects.filter(
+            user_id=user_id, balance_type=balance_type
+        ).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+
+    @staticmethod
+    def get_all_balances(user_id):
+        return {
+            'main': str(Transaction.get_balance(user_id, 'main')),
+            'premium': str(Transaction.get_balance(user_id, 'premium')),
+            'vacation': str(Transaction.get_balance(user_id, 'vacation')),
+        }
