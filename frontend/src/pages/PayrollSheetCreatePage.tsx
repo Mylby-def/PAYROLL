@@ -1,22 +1,13 @@
 import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useAuthStore } from '../store/authStore'
 import api from '../api/client'
 
-interface Teacher {
-  id: number
-  full_name: string
-}
-
-interface Subject {
-  id: number
-  name: string
-}
-
-function todayStr() {
-  return new Date().toISOString().split('T')[0]
-}
+interface Teacher { id: number; full_name: string; subject_ids: number[]; subject_names: string[] }
+interface Subject { id: number; name: string }
 
 export default function PayrollSheetCreatePage() {
+  const { user } = useAuthStore()
   const navigate = useNavigate()
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -27,154 +18,126 @@ export default function PayrollSheetCreatePage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const isTeacher = user?.role === 'teacher' || user?.role === 'employee'
+
   useEffect(() => {
     Promise.all([api.get('/teachers/'), api.get('/subjects/')])
       .then(([tRes, sRes]) => {
-        setTeachers(tRes.data.results || tRes.data)
-        setSubjects(sRes.data.results || sRes.data)
+        const tList = tRes.data.results || tRes.data
+        const sList = sRes.data.results || sRes.data
+        setTeachers(tList)
+        setSubjects(sList)
+        if (isTeacher && user?.teacher_id) {
+          const myTeacher = tList.find((t: Teacher) => t.id === user.teacher_id)
+          if (myTeacher) {
+            setTeacherId(String(myTeacher.id))
+            if (myTeacher.subject_ids?.length > 0) {
+              setSelectedSubjectIds(myTeacher.subject_ids)
+            }
+          }
+        }
       })
       .catch(() => {})
   }, [])
+
+  const handleTeacherChange = (id: string) => {
+    setTeacherId(id)
+    if (id) {
+      const t = teachers.find((t) => t.id === Number(id))
+      if (t?.subject_ids?.length) setSelectedSubjectIds(t.subject_ids)
+    }
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const response = await api.post('/payroll-sheets/', {
+      const res = await api.post('/payroll-sheets/', {
         teacher: teacherId ? Number(teacherId) : null,
         period_start: periodStart,
         period_end: periodEnd,
         subjects: selectedSubjectIds,
       })
-      navigate(`/payroll-sheets/${response.data.id}`)
-    } catch (err: unknown) {
-      const msg =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: Record<string, unknown> } }).response?.data
-          : null
-      const detail =
-        msg && typeof msg === 'object' && 'detail' in msg
-          ? String((msg as { detail: unknown }).detail)
-          : ''
-      setError(detail || 'Не удалось создать расчётный лист')
+      navigate(`/payroll-sheets/${res.data.id}`)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Не удалось создать расчётный лист')
     } finally {
       setLoading(false)
     }
   }
 
   const toggleSubject = (id: number) => {
-    setSelectedSubjectIds((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    )
+    setSelectedSubjectIds((p) => p.includes(id) ? p.filter((s) => s !== id) : [...p, id])
   }
 
+  const selectedTeacher = teachers.find((t) => t.id === Number(teacherId))
+
   return (
-    <div className="px-4 py-6 sm:px-0">
-      <Link
-        to="/payroll-sheets"
-        className="text-indigo-600 hover:text-indigo-900 mb-4 inline-block"
-      >
-        ← Назад к списку
+    <div>
+      <Link to="/payroll-sheets" className="text-indigo-600 hover:text-indigo-800 text-sm font-medium transition">
+        &larr; Назад к списку
       </Link>
-      <div className="max-w-lg">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">Новый расчётный лист</h1>
-        <form onSubmit={handleSubmit} className="bg-white shadow rounded-lg p-6 space-y-4">
+      <div className="max-w-lg mt-4">
+        <h1 className="text-2xl font-bold text-slate-900 mb-6">Новый расчётный лист</h1>
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
-              {error}
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>
+          )}
+
+          {isTeacher ? (
+            <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
+              <p className="text-sm font-medium text-indigo-900">Сотрудник: {selectedTeacher?.full_name || user?.first_name}</p>
+              {selectedTeacher?.subject_names?.length ? (
+                <p className="text-xs text-indigo-600 mt-1">Предметы: {selectedTeacher.subject_names.join(', ')}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Педагог</label>
+              <select required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm" value={teacherId} onChange={(e) => handleTeacherChange(e.target.value)}>
+                <option value="">Выберите...</option>
+                {teachers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+              </select>
             </div>
           )}
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Педагог (ФИО)
-            </label>
-            <select
-              required
-              className="block w-full rounded-md border border-gray-300 shadow-sm px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              value={teacherId}
-              onChange={(e) => setTeacherId(e.target.value)}
-            >
-              <option value="">Выберите педагога...</option>
-              {teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.full_name}
-                </option>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-slate-700">Период</label>
+              <button type="button" onClick={() => {
+                const now = new Date()
+                const y = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+                const m = now.getMonth() === 0 ? 12 : now.getMonth()
+                setPeriodStart(`${y}-${String(m).padStart(2, '0')}-01`)
+                setPeriodEnd(`${y}-${String(m).padStart(2, '0')}-${new Date(y, m, 0).getDate()}`)
+              }} className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium transition">
+                Прошлый месяц
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input type="date" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm [color-scheme:light]" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+              <input type="date" required className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm [color-scheme:light]" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Предметы</label>
+            <div className="border border-slate-200 rounded-xl p-3 max-h-40 overflow-y-auto space-y-1.5">
+              {subjects.map((s) => (
+                <label key={s.id} className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={selectedSubjectIds.includes(s.id)} onChange={() => toggleSubject(s.id)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span className="text-sm text-slate-800">{s.name}</span>
+                </label>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Период с</label>
-            <div className="flex gap-2 items-center">
-              <input
-                type="date"
-                required
-                className="block flex-1 rounded-md border border-gray-300 shadow-sm px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setPeriodStart(todayStr())}
-                className="px-3 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-md hover:bg-indigo-50"
-              >
-                Сегодня
-              </button>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Период по</label>
-            <div className="flex gap-2 items-center">
-              <input
-                type="date"
-                required
-                className="block flex-1 rounded-md border border-gray-300 shadow-sm px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setPeriodEnd(todayStr())}
-                className="px-3 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-md hover:bg-indigo-50"
-              >
-                Сегодня
-              </button>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Предметы, по которым запрашивается оплата
-            </label>
-            <div className="border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
-              {subjects.length === 0 ? (
-                <p className="text-sm text-gray-500">Нет предметов в системе</p>
-              ) : (
-                subjects.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedSubjectIds.includes(s.id)}
-                      onChange={() => toggleSubject(s.id)}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                    <span className="text-sm text-gray-900">{s.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
-          <div className="flex gap-2 pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-            >
+
+          <div className="flex gap-3 pt-2">
+            <button type="submit" disabled={loading} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition shadow-sm">
               {loading ? 'Создание...' : 'Создать'}
             </button>
-            <Link
-              to="/payroll-sheets"
-              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50"
-            >
+            <Link to="/payroll-sheets" className="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition">
               Отмена
             </Link>
           </div>

@@ -3,271 +3,398 @@ import api from '../api/client'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-interface Rate {
+interface IndividualPrice {
   id: number
-  rate_kind: string
-  rate_type: string | null
-  subject_name: string
-  amount: string
+  basic_rate: string
+  premium_rate: string
+  vacation_rate: string
   effective_from: string
   effective_to: string | null
 }
 
-interface Subject {
+interface GroupPrice {
   id: number
-  name: string
+  class_from: number
+  class_to: number
+  basic_rate: string
+  premium_rate: string
+  vacation_rate: string
+  effective_from: string
+  effective_to: string | null
 }
 
-const RATE_KIND_LABELS: Record<string, string> = {
-  payment: 'Оплата',
-  bonus: 'Премиальные',
-  vacation: 'Отпускные',
+interface PkshPrice {
+  id: number
+  basic_rate: string
+  premium_rate: string
+  vacation_rate: string
+  effective_from: string
+  effective_to: string | null
 }
+
+interface Gap {
+  gap_from: string
+  gap_to: string
+}
+
+type PriceTab = 'individual' | 'group' | 'pksh'
+
+const todayStr = () => new Date().toISOString().split('T')[0]
 
 export default function RatesPage() {
-  const [rates, setRates] = useState<Rate[]>([])
-  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [tab, setTab] = useState<PriceTab>('individual')
+  const [individualPrices, setIndividualPrices] = useState<IndividualPrice[]>([])
+  const [groupPrices, setGroupPrices] = useState<GroupPrice[]>([])
+  const [pkshPrices, setPkshPrices] = useState<PkshPrice[]>([])
+  const [individualGaps, setIndividualGaps] = useState<Gap[]>([])
+  const [groupGaps, setGroupGaps] = useState<Gap[]>([])
+  const [pkshGaps, setPkshGaps] = useState<Gap[]>([])
   const [loading, setLoading] = useState(true)
+
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({
-    rate_kind: 'payment' as string,
-    rate_type: 'hour' as string,
-    subject: '',
-    amount: '',
-    effective_from: new Date().toISOString().split('T')[0],
-    effective_to: '',
-  })
+  const [indForm, setIndForm] = useState({ basic_rate: '', premium_rate: '', vacation_rate: '', effective_from: todayStr(), effective_to: '' })
+  const [grpForm, setGrpForm] = useState({ class_from: '1', class_to: '4', basic_rate: '', premium_rate: '', vacation_rate: '', effective_from: todayStr(), effective_to: '' })
+  const [pkshForm, setPkshForm] = useState({ basic_rate: '', premium_rate: '', vacation_rate: '', effective_from: todayStr(), effective_to: '' })
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  useEffect(() => { fetchAll() }, [])
 
-  const fetchData = async () => {
+  const fetchAll = async () => {
     try {
-      const [ratesRes, subjectsRes] = await Promise.all([
-        api.get('/rates/'),
-        api.get('/subjects/'),
+      const [indRes, grpRes, pkshRes, indGapsRes, grpGapsRes, pkshGapsRes] = await Promise.all([
+        api.get('/individual-prices/'),
+        api.get('/group-prices/'),
+        api.get('/pksh-prices/'),
+        api.get('/individual-prices/check_gaps/'),
+        api.get('/group-prices/check_gaps/'),
+        api.get('/pksh-prices/check_gaps/'),
       ])
-      setRates(ratesRes.data.results || ratesRes.data)
-      setSubjects(subjectsRes.data.results || subjectsRes.data)
+      setIndividualPrices(indRes.data.results || indRes.data)
+      setGroupPrices(grpRes.data.results || grpRes.data)
+      setPkshPrices(pkshRes.data.results || pkshRes.data)
+      setIndividualGaps(indGapsRes.data.gaps || [])
+      setGroupGaps(grpGapsRes.data.gaps || [])
+      setPkshGaps(pkshGapsRes.data.gaps || [])
     } catch (error) {
-      console.error('Error fetching data:', error)
+      console.error('Error fetching prices:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleDelete = async (type: PriceTab, id: number) => {
+    if (!confirm('Удалить эту цену?')) return
     try {
-      const payload = {
-        rate_kind: formData.rate_kind,
-        rate_type: formData.rate_kind === 'payment' ? formData.rate_type : null,
-        subject: formData.subject,
-        amount: formData.amount,
-        effective_from: formData.effective_from,
-        effective_to: formData.effective_to || null,
-      }
-      await api.post('/rates/', payload)
-      setShowForm(false)
-      setFormData({
-        rate_kind: 'payment',
-        rate_type: 'hour',
-        subject: '',
-        amount: '',
-        effective_from: new Date().toISOString().split('T')[0],
-        effective_to: '',
-      })
-      fetchData()
+      const endpoint = type === 'individual' ? 'individual-prices' : type === 'group' ? 'group-prices' : 'pksh-prices'
+      await api.delete(`/${endpoint}/${id}/`)
+      fetchAll()
     } catch (error) {
-      console.error('Error creating rate:', error)
+      console.error('Error deleting price:', error)
     }
   }
 
-  if (loading) {
-    return <div className="text-center py-12">Загрузка...</div>
+  const handleSubmitIndividual = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await api.post('/individual-prices/', {
+        ...indForm,
+        effective_to: indForm.effective_to || null,
+      })
+      setShowForm(false)
+      setIndForm({ basic_rate: '', premium_rate: '', vacation_rate: '', effective_from: todayStr(), effective_to: '' })
+      fetchAll()
+    } catch (error) { console.error(error) }
   }
+
+  const handleSubmitGroup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await api.post('/group-prices/', {
+        ...grpForm,
+        class_from: parseInt(grpForm.class_from),
+        class_to: parseInt(grpForm.class_to),
+        effective_to: grpForm.effective_to || null,
+      })
+      setShowForm(false)
+      setGrpForm({ class_from: '1', class_to: '4', basic_rate: '', premium_rate: '', vacation_rate: '', effective_from: todayStr(), effective_to: '' })
+      fetchAll()
+    } catch (error) { console.error(error) }
+  }
+
+  const handleSubmitPksh = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await api.post('/pksh-prices/', {
+        ...pkshForm,
+        effective_to: pkshForm.effective_to || null,
+      })
+      setShowForm(false)
+      setPkshForm({ basic_rate: '', premium_rate: '', vacation_rate: '', effective_from: todayStr(), effective_to: '' })
+      fetchAll()
+    } catch (error) { console.error(error) }
+  }
+
+  const formatCurrency = (val: string) =>
+    parseFloat(val).toLocaleString('ru-RU', { style: 'currency', currency: 'RUB' })
+
+  const formatDate = (d: string) => format(new Date(d), 'd MMM yyyy', { locale: ru })
+
+  const currentGaps = tab === 'individual' ? individualGaps : tab === 'group' ? groupGaps : pkshGaps
+  const tabLabel = tab === 'individual' ? 'индивидуальных занятий' : tab === 'group' ? 'групповых занятий' : 'ПКШ'
+
+  if (loading) return <div className="text-center py-12">Загрузка...</div>
 
   return (
     <div className="px-4 py-6 sm:px-0">
       <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">Тарифы</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Цены</h1>
         <button
           onClick={() => setShowForm(!showForm)}
           className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
         >
-          {showForm ? 'Отмена' : 'Добавить тариф'}
+          {showForm ? 'Отмена' : 'Добавить цену'}
         </button>
       </div>
 
-      {showForm && (
+      {/* Tabs */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          {([
+            ['individual', 'Индивидуальные'],
+            ['group', 'Групповые'],
+            ['pksh', 'ПКШ'],
+          ] as [PriceTab, string][]).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => { setTab(key); setShowForm(false) }}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                tab === key
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Gap warnings */}
+      {currentGaps.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {currentGaps.map((gap, i) => (
+            <div key={i} className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md text-sm">
+              С {formatDate(gap.gap_from)} по {formatDate(gap.gap_to)} у вас не выставлена цена за {tabLabel}, занятия за этот период не будут оплачиваться. Вы уверены?
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create forms */}
+      {showForm && tab === 'individual' && (
         <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-lg font-medium mb-4">Новый тариф</h2>
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+          <h2 className="text-lg font-medium mb-4">Новая цена индивидуальных занятий</h2>
+          <form onSubmit={handleSubmitIndividual}>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Вид</label>
-                <select
-                  required
-                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                  value={formData.rate_kind}
-                  onChange={(e) =>
-                    setFormData({ ...formData, rate_kind: e.target.value })
-                  }
-                >
-                  <option value="payment">Оплата</option>
-                  <option value="bonus">Премиальные</option>
-                  <option value="vacation">Отпускные</option>
-                </select>
-              </div>
-              {formData.rate_kind === 'payment' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Тип (для Оплаты)
-                  </label>
-                  <select
-                    className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                    value={formData.rate_type}
-                    onChange={(e) =>
-                      setFormData({ ...formData, rate_type: e.target.value })
-                    }
-                  >
-                    <option value="hour">За час</option>
-                    <option value="group">За группу</option>
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Предмет</label>
-                <select
-                  required
-                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                  value={formData.subject}
-                  onChange={(e) =>
-                    setFormData({ ...formData, subject: e.target.value })
-                  }
-                >
-                  <option value="">Выберите...</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Основная цена</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={indForm.basic_rate} onChange={(e) => setIndForm({ ...indForm, basic_rate: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Сумма</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                  value={formData.amount}
-                  onChange={(e) =>
-                    setFormData({ ...formData, amount: e.target.value })
-                  }
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Премиальные</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={indForm.premium_rate} onChange={(e) => setIndForm({ ...indForm, premium_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Отпускные</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={indForm.vacation_rate} onChange={(e) => setIndForm({ ...indForm, vacation_rate: e.target.value })} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Действует с</label>
-                <input
-                  type="date"
-                  required
-                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                  value={formData.effective_from}
-                  onChange={(e) =>
-                    setFormData({ ...formData, effective_from: e.target.value })
-                  }
-                />
+                <input type="date" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={indForm.effective_from} onChange={(e) => setIndForm({ ...indForm, effective_from: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Действует до (необязательно)
-                </label>
-                <input
-                  type="date"
-                  className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                  value={formData.effective_to}
-                  onChange={(e) =>
-                    setFormData({ ...formData, effective_to: e.target.value })
-                  }
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Действует до</label>
+                <input type="date" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={indForm.effective_to} onChange={(e) => setIndForm({ ...indForm, effective_to: e.target.value })} />
               </div>
             </div>
-            <button
-              type="submit"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              Создать
-            </button>
+            <button type="submit" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">Создать</button>
           </form>
         </div>
       )}
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Вид
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Предмет
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Тип
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Сумма
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Период
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {rates.map((rate) => (
-                <tr key={rate.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {RATE_KIND_LABELS[rate.rate_kind] || rate.rate_kind}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {rate.subject_name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {rate.rate_type === 'hour'
-                      ? 'За час'
-                      : rate.rate_type === 'group'
-                        ? 'За группу'
-                        : '—'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {parseFloat(rate.amount).toLocaleString('ru-RU', {
-                      style: 'currency',
-                      currency: 'RUB',
-                    })}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(new Date(rate.effective_from), 'd MMM yyyy', {
-                      locale: ru,
-                    })}
-                    {rate.effective_to &&
-                      ` - ${format(new Date(rate.effective_to), 'd MMM yyyy', {
-                        locale: ru,
-                      })}`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {showForm && tab === 'group' && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-medium mb-4">Новая цена групповых занятий</h2>
+          <form onSubmit={handleSubmitGroup}>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Класс от</label>
+                <input type="number" min="0" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.class_from} onChange={(e) => setGrpForm({ ...grpForm, class_from: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Класс до</label>
+                <input type="number" min="0" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.class_to} onChange={(e) => setGrpForm({ ...grpForm, class_to: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Основная цена</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.basic_rate} onChange={(e) => setGrpForm({ ...grpForm, basic_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Премиальные</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.premium_rate} onChange={(e) => setGrpForm({ ...grpForm, premium_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Отпускные</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.vacation_rate} onChange={(e) => setGrpForm({ ...grpForm, vacation_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Действует с</label>
+                <input type="date" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.effective_from} onChange={(e) => setGrpForm({ ...grpForm, effective_from: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Действует до</label>
+                <input type="date" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={grpForm.effective_to} onChange={(e) => setGrpForm({ ...grpForm, effective_to: e.target.value })} />
+              </div>
+            </div>
+            <button type="submit" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">Создать</button>
+          </form>
         </div>
-        {rates.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            Нет тарифов. Добавьте первый!
+      )}
+
+      {showForm && tab === 'pksh' && (
+        <div className="bg-white shadow rounded-lg p-6 mb-6">
+          <h2 className="text-lg font-medium mb-4">Новая цена ПКШ (подготовка к школе)</h2>
+          <form onSubmit={handleSubmitPksh}>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Основная цена</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={pkshForm.basic_rate} onChange={(e) => setPkshForm({ ...pkshForm, basic_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Премиальные</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={pkshForm.premium_rate} onChange={(e) => setPkshForm({ ...pkshForm, premium_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Отпускные</label>
+                <input type="number" step="0.01" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={pkshForm.vacation_rate} onChange={(e) => setPkshForm({ ...pkshForm, vacation_rate: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Действует с</label>
+                <input type="date" required className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={pkshForm.effective_from} onChange={(e) => setPkshForm({ ...pkshForm, effective_from: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Действует до</label>
+                <input type="date" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" value={pkshForm.effective_to} onChange={(e) => setPkshForm({ ...pkshForm, effective_to: e.target.value })} />
+              </div>
+            </div>
+            <button type="submit" className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">Создать</button>
+          </form>
+        </div>
+      )}
+
+      {/* Tables */}
+      {tab === 'individual' && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-md">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Основная</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Премиальные</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Отпускные</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Период</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {individualPrices.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatCurrency(p.basic_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatCurrency(p.premium_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatCurrency(p.vacation_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(p.effective_from)}{p.effective_to ? ` — ${formatDate(p.effective_to)}` : ' — ...'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <button onClick={() => handleDelete('individual', p.id)} className="text-red-600 hover:text-red-800">Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
+          {individualPrices.length === 0 && <div className="text-center py-12 text-gray-500">Нет цен для индивидуальных занятий</div>}
+        </div>
+      )}
+
+      {tab === 'group' && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-md">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Классы</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Основная</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Премиальные</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Отпускные</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Период</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {groupPrices.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{p.class_from}–{p.class_to} кл.</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatCurrency(p.basic_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatCurrency(p.premium_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatCurrency(p.vacation_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(p.effective_from)}{p.effective_to ? ` — ${formatDate(p.effective_to)}` : ' — ...'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <button onClick={() => handleDelete('group', p.id)} className="text-red-600 hover:text-red-800">Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {groupPrices.length === 0 && <div className="text-center py-12 text-gray-500">Нет цен для групповых занятий</div>}
+        </div>
+      )}
+
+      {tab === 'pksh' && (
+        <div className="bg-white shadow overflow-hidden sm:rounded-md">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Основная</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Премиальные</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Отпускные</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Период</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {pkshPrices.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatCurrency(p.basic_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatCurrency(p.premium_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{formatCurrency(p.vacation_rate)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(p.effective_from)}{p.effective_to ? ` — ${formatDate(p.effective_to)}` : ' — ...'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <button onClick={() => handleDelete('pksh', p.id)} className="text-red-600 hover:text-red-800">Удалить</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pkshPrices.length === 0 && <div className="text-center py-12 text-gray-500">Нет цен ПКШ</div>}
+        </div>
+      )}
     </div>
   )
 }

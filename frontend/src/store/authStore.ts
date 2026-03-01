@@ -7,6 +7,13 @@ interface User {
   email?: string
   first_name?: string
   last_name?: string
+  role?: string
+  city?: string
+  city_id?: number
+  balance?: string
+  balance_premium?: string
+  balance_vacation?: string
+  teacher_id?: number | null
 }
 
 interface AuthState {
@@ -15,39 +22,31 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   checkAuth: () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
-
   login: async (username: string, password: string) => {
-    try {
-      await api.get('/auth/csrf/')
-      const response = await api.post('/auth/login/', { username, password })
-      const user = response.data.user
-      set({ user, isAuthenticated: true })
-    } catch (error) {
-      throw error
-    }
+    await api.get('/auth/csrf/')
+    const r = await api.post('/auth/login/', { username, password })
+    set({ user: r.data.user, isAuthenticated: true })
   },
-
   logout: async () => {
-    try {
-      await api.post('/auth/logout/')
-    } catch (error) {
-      console.error('Logout error:', error)
-    } finally {
-      set({ user: null, isAuthenticated: false })
-    }
+    try { await api.post('/auth/logout/') } catch {}
+    set({ user: null, isAuthenticated: false })
   },
-
   checkAuth: async () => {
     try {
-      const response = await api.get('/auth/user/')
-      set({ user: response.data, isAuthenticated: true })
-    } catch (error) {
-      set({ user: null, isAuthenticated: false })
-    }
+      const r = await api.get('/auth/user/')
+      set({ user: r.data, isAuthenticated: true })
+    } catch { set({ user: null, isAuthenticated: false }) }
+  },
+  refreshUser: async () => {
+    try {
+      const r = await api.get('/auth/user/')
+      set({ user: r.data })
+    } catch {}
   },
 }))
